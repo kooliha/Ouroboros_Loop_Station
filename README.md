@@ -7,21 +7,19 @@ It’s simple, fast, no menu diving, no fluff.
 Made for musicians and tinkerers.
 
 
-## 🎛️ Key Features
+## Key Features
 
-- 🔁 **5 independent stereo tracks**
+- **5 independent stereo tracks**
   - Up to **60 seconds** each at 48kHz
   - Individual control of:
     - Playback **Speed**: 0.3× to 2.0×
     - **Volume/Gain**
     - **Pan** (L/R balance)
-- ⏱️ **Instant loop control** — no menus, just buttons and knobs
-- 💡 **LED feedback** for record, playback, pause, and clear
-- 🧠 **Built on Daisy Seed** — powerful STM32 audio platform
+-  **Instant loop control** — no menus, just buttons and knobs
 
 
 
-## 🎚️ Audio I/O
+## Audio I/O
 
 - 🎸 **Guitar** (Hi-Z)add
 - 🎤 **Microphone** (with analog preamp)
@@ -33,17 +31,13 @@ Made for musicians and tinkerers.
 
 ## 🛠️ Hardware & Build
 
-- 💾 Daisy Seed
-- 🧱 **Through-hole components** only — easy to solder and mod
-- 🧩 Compact and affordable PCB
-- 📦 All files open-source: schematics, PCB, and firmware
-
+- Daisy Seed
+- **Through-hole components** only — easy to solder and mod
 
 ---
 
 ## 💬 Status
 
 > Project is in **active development**  
-> Hardware design is in prototyping stage  
-> Firmware: basic looper engine working, track management in progress
+> Hardware design is in the prototyping stage  
 
