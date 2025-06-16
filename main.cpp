@@ -176,6 +176,8 @@ else
     }
 }
 
+
+
 int main(void)
 {
     hw.Configure();
@@ -195,5 +197,5 @@ int main(void)
     hw.adc.Start();
 
     hw.StartAudio(AudioCallback);
-    while(1) {}
+    while(1) {}//test
 }

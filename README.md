@@ -5,7 +5,7 @@
 **Ouroboros** is a DIY-friendly **5-track loop station** built on the **Daisy Seed**.  
 It’s simple, fast, no menu diving, no fluff.  
 Made for musicians and tinkerers.
----
+
 
 ## 🎛️ Key Features
 
@@ -19,17 +19,17 @@ Made for musicians and tinkerers.
 - 💡 **LED feedback** for record, playback, pause, and clear
 - 🧠 **Built on Daisy Seed** — powerful STM32 audio platform
 
----
+
 
 ## 🎚️ Audio I/O
 
-- 🎸 **Guitar** (Hi-Z)
+- 🎸 **Guitar** (Hi-Z)add
 - 🎤 **Microphone** (with analog preamp)
 - 🎧 **Stereo Line In**
 - 🎛️ **Eurorack**-level audio input
 - 🔊 **Stereo Output**
 
----
+
 
 ## 🛠️ Hardware & Build
 
