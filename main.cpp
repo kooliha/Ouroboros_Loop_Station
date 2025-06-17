@@ -17,6 +17,14 @@ float T1_Speed = 0.5f; // 0.0 to 1.0
 AdcChannelConfig T1_Volume_adc_cfg;
 float T1_Volume = 1.0f; // 0.0 (min) to 1.0 (max)
 
+// Potentiometer for PAN control (T1-Speed)
+AdcChannelConfig T1_PAN_adc_cfg;
+float T1_Pan = 0.5f; // 0.0 to 1.0
+
+
+
+
+
 
 #define kBuffSize (48000 * 30 * 5) // 2.5 minutes of floats at 48 khz
 
@@ -30,6 +38,11 @@ float play_pos = 0.0f;
 bool recording = false;
 bool recorded = false;
 bool paused = false;
+
+
+
+
+
 
 // Variables for Multi-click detection
 uint32_t last_release = 0;
@@ -104,7 +117,15 @@ void AudioCallback(AudioHandle::InputBuffer in,
     ch1_record_led.Write(recording);
     ch1_play_led.Write(recorded && !recording && !paused);
 
+
+
+
 T1_Speed = hw.adc.GetFloat(0); // 0.0 (min) to 1.0 (max)
+
+T1_Pan = hw.adc.GetFloat(2); // 0.0 (left) to 1.0 (right)
+float panL = 1.0f - T1_Pan;
+float panR = T1_Pan;
+
 T1_Volume = 1.0f + (hw.adc.GetFloat(1) - 0.5f) * 4.0f; // 0.0 = -1.0, 0.5 = 1.0, 1.0 = 3.0
 if(T1_Volume < 0.0f) T1_Volume = 0.0f;
 
@@ -113,7 +134,6 @@ T1_Volume = powf(Volume_pot, 2.5f) * 3.0f;    // tweak the exponent for better c
 
 const float center = 0.5f;
 const float dead_zone = 0.09f;
-
 float speed = 1.0f;
 
 if(T1_Speed < center - dead_zone)
@@ -160,8 +180,8 @@ else
             int idx1 = (idx0 + 1) % record_len;
             float frac = play_pos - idx0;
 
-            out[0][i] = (buffer_l[idx0] * (1.0f - frac) + buffer_l[idx1] * frac) * T1_Volume;
-            out[1][i] = (buffer_r[idx0] * (1.0f - frac) + buffer_r[idx1] * frac) * T1_Volume;
+            out[0][i] = (buffer_l[idx0] * (1.0f - frac) + buffer_l[idx1] * frac) * T1_Volume * panL;
+            out[1][i] = (buffer_r[idx0] * (1.0f - frac) + buffer_r[idx1] * frac) * T1_Volume * panR;
 
             play_pos += speed;
             while(play_pos >= record_len) play_pos -= record_len;
@@ -192,10 +212,16 @@ int main(void)
     // Init ADC for potentiometer (T1-Speed) on D15/A0
     T1_Speed_adc_cfg.InitSingle(D19);
     T1_Volume_adc_cfg.InitSingle(D20);
-    AdcChannelConfig adc_cfgs[2] = {T1_Speed_adc_cfg, T1_Volume_adc_cfg};
-    hw.adc.Init(adc_cfgs, 2);
+    T1_PAN_adc_cfg.InitSingle(D22);
+
+
+
+
+    AdcChannelConfig adc_cfgs[3] = {T1_Speed_adc_cfg, T1_Volume_adc_cfg, T1_PAN_adc_cfg};
+    hw.adc.Init(adc_cfgs, 3);
     hw.adc.Start();
 
     hw.StartAudio(AudioCallback);
     while(1) {}//t
 }
+///test
