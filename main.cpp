@@ -5,135 +5,190 @@ using namespace daisy;
 using namespace daisy::seed;
 using namespace daisysp;
 
-DaisySeed hw;
-Switch Ch1Button;
-GPIO ch1_record_led, ch1_play_led, input_select_switch;
-
-// Potentiometer configs
-AdcChannelConfig T1_Speed_adc_cfg;
-AdcChannelConfig T1_Volume_adc_cfg;
-AdcChannelConfig T1_PAN_adc_cfg;
-
-float T1_Speed = 0.5f; // 0.0 to 1.0
-float T1_Volume = 1.0f; // 0.0 (min) to 1.0 (max)
-float T1_Pan = 0.5f;    // 0.0 (left) to 1.0 (right)
-
-#define kBuffSize (48000 * 30 * 5) // 2.5 minutes of floats at 48 kHz
-
-float DSY_SDRAM_BSS buffer_l[kBuffSize];
-float DSY_SDRAM_BSS buffer_r[kBuffSize];
-
-size_t record_len = 0;
-size_t write_idx = 0;
-size_t play_idx = 0;
-float play_pos = 0.0f;
-bool recording = false;
-bool recorded = false;
-bool paused = false;
-
-// Multi-click detection
-uint32_t last_release = 0;
-int click_count = 0;
-const uint32_t double_click_time = 400; // ms
-
-void AudioCallback(AudioHandle::InputBuffer in,
-                   AudioHandle::OutputBuffer out,
-                   size_t size)
+// --- Track Structure ---
+struct LooperTrack
 {
-    Ch1Button.Debounce();
+    float* buffer_l;
+    float* buffer_r;
+    size_t buffer_size;
 
-    // --- Button logic ---
-    static bool was_pressed = false;
-    bool pressed = Ch1Button.Pressed();
+    size_t record_len = 0;
+    size_t write_idx = 0;
+    float play_pos = 0.0f;
 
-    // Start recording on long press
-    if(Ch1Button.TimeHeldMs() > 400 && pressed && !recording)
+    bool recording = false;
+    bool recorded = false;
+    bool paused = false;
+
+    // Controls
+    float speed = 1.0f;
+    float volume = 1.0f;
+    float pan = 0.5f;
+
+    // Hardware
+    Switch* button = nullptr;
+    GPIO* record_led = nullptr;
+    GPIO* play_led = nullptr;
+    GPIO* input_select_switch = nullptr;
+
+    // Multi-click detection
+    uint32_t last_release = 0;
+    int click_count = 0;
+    static constexpr uint32_t double_click_time = 400; // ms
+
+    void Reset()
     {
-        recording = true;
+        record_len = 0;
         write_idx = 0;
+        play_pos = 0.0f;
+        recording = false;
         recorded = false;
         paused = false;
         click_count = 0;
+    }
+};
+
+// --- Globals ---
+DaisySeed hw;
+
+#define kBuffSize (48000 * 30 * 5) // 2.5 minutes of floats at 48 kHz
+
+float DSY_SDRAM_BSS buffer_l1[kBuffSize];
+float DSY_SDRAM_BSS buffer_r1[kBuffSize];
+
+LooperTrack track1;
+
+// --- Hardware Setup ---
+void SetupHardware()
+{
+    hw.Configure();
+    hw.Init();
+
+    // Track 1 hardware
+    static Switch ch1_button;
+    static GPIO ch1_record_led, ch1_play_led, ch1_input_select;
+    ch1_button.Init(hw.GetPin(17), 1000);
+    ch1_record_led.Init(D15, GPIO::Mode::OUTPUT);
+    ch1_play_led.Init(D16, GPIO::Mode::OUTPUT);
+    ch1_input_select.Init(D21, GPIO::Mode::INPUT, GPIO::Pull::PULLUP);
+
+    // Assign to struct
+    track1.buffer_l = buffer_l1;
+    track1.buffer_r = buffer_r1;
+    track1.buffer_size = kBuffSize;
+    track1.button = &ch1_button;
+    track1.record_led = &ch1_record_led;
+    track1.play_led = &ch1_play_led;
+    track1.input_select_switch = &ch1_input_select;
+
+    // ADC setup for speed, volume, pan
+    static AdcChannelConfig speed_adc, volume_adc, pan_adc;
+    speed_adc.InitSingle(D19);
+    volume_adc.InitSingle(D20);
+    pan_adc.InitSingle(D22);
+    AdcChannelConfig adc_cfgs[3] = {speed_adc, volume_adc, pan_adc};
+    hw.adc.Init(adc_cfgs, 3);
+    hw.adc.Start();
+}
+
+// --- Track Processing ---
+void ProcessTrack(LooperTrack& t, AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, size_t size)
+{
+    t.button->Debounce();
+
+    // --- Button logic ---
+    static bool was_pressed = false;
+    bool pressed = t.button->Pressed();
+
+    // Start recording on long press
+    if(t.button->TimeHeldMs() > 400 && pressed && !t.recording)
+    {
+        t.recording = true;
+        t.write_idx = 0;
+        t.recorded = false;
+        t.paused = false;
+        t.click_count = 0;
     }
 
     // On release
     if(was_pressed && !pressed)
     {
-        if(recording)
+        if(t.recording)
         {
             // Finish recording
-            recording = false;
-            record_len = write_idx > 0 ? write_idx : 1;
-            play_idx = 0;
-            recorded = true;
+            t.recording = false;
+            t.record_len = t.write_idx > 0 ? t.write_idx : 1;
+            t.play_pos = 0.0f;
+            t.recorded = true;
         }
         else
         {
             // Not recording: count clicks
             uint32_t now = System::GetNow();
-            if(now - last_release < double_click_time)
+            if(now - t.last_release < t.double_click_time)
             {
-                click_count++;
+                t.click_count++;
             }
             else
             {
-                click_count = 1;
+                t.click_count = 1;
             }
-            last_release = now;
+            t.last_release = now;
 
             // Double click: clear buffer
-            if(click_count == 2)
+            if(t.click_count == 2)
             {
-                recorded = false;
-                record_len = 0;
-                play_idx = 0;
-                click_count = 0;
-                paused = false;
+                t.recorded = false;
+                t.record_len = 0;
+                t.play_pos = 0.0f;
+                t.click_count = 0;
+                t.paused = false;
             }
             // Single click: toggle pause/play
-            else if(click_count == 1)
+            else if(t.click_count == 1)
             {
-                if(recorded)
-                    paused = !paused;
+                if(t.recorded)
+                    t.paused = !t.paused;
             }
         }
     }
     was_pressed = pressed;
 
     // LED feedback
-    ch1_record_led.Write(recording);
-    ch1_play_led.Write(recorded && !recording && !paused);
+    t.record_led->Write(t.recording);
+    t.play_led->Write(t.recorded && !t.recording && !t.paused);
 
     // --- Read pots ---
-    T1_Speed = hw.adc.GetFloat(0); // 0.0 (min) to 1.0 (max)
-    float Volume_pot = hw.adc.GetFloat(1); // 0.0 to 1.0
-    T1_Volume = powf(Volume_pot, 2.5f) * 3.0f;
-    if(T1_Volume < 0.0f) T1_Volume = 0.0f;
-    T1_Pan = hw.adc.GetFloat(2); // 0.0 (left) to 1.0 (right)
-    float panL = 1.0f - T1_Pan;
-    float panR = T1_Pan;
+    float speed_pot = hw.adc.GetFloat(0);
+    float vol_pot = hw.adc.GetFloat(1);
+    float pan_pot = hw.adc.GetFloat(2);
 
-    // --- Speed logic ---
+    // Speed logic
     const float center = 0.5f;
     const float dead_zone = 0.09f;
-    float speed = 1.0f;
-    if(T1_Speed < center - dead_zone)
+    if(speed_pot < center - dead_zone)
     {
-        float t = (T1_Speed - 0.0f) / (center - dead_zone);
-        speed = 0.3f + t * (1.0f - 0.3f);
+        float tt = (speed_pot - 0.0f) / (center - dead_zone);
+        t.speed = 0.3f + tt * (1.0f - 0.3f);
     }
-    else if(T1_Speed > center + dead_zone)
+    else if(speed_pot > center + dead_zone)
     {
-        float t = (T1_Speed - (center + dead_zone)) / (1.0f - (center + dead_zone));
-        speed = 1.0f + t * (2.0f - 1.0f);
+        float tt = (speed_pot - (center + dead_zone)) / (1.0f - (center + dead_zone));
+        t.speed = 1.0f + tt * (2.0f - 1.0f);
     }
     else
     {
-        speed = 1.0f;
+        t.speed = 1.0f;
     }
 
+    t.volume = powf(vol_pot, 2.5f) * 3.0f;
+    if(t.volume < 0.0f) t.volume = 0.0f;
+    t.pan = pan_pot;
+    float panL = 1.0f - t.pan;
+    float panR = t.pan;
+
     // --- Input selection ---
-    bool input_selection = (input_select_switch.Read() == 0); // LOW = mic, HIGH = guitar
+    bool input_selection = (t.input_select_switch->Read() == 0); // LOW = mic, HIGH = guitar
 
     for(size_t i = 0; i < size; i++)
     {
@@ -141,30 +196,30 @@ void AudioCallback(AudioHandle::InputBuffer in,
         float guitar_in = in[1][i];
         float selected_input = input_selection ? mic_in : guitar_in;
 
-        if(recording)
+        if(t.recording)
         {
-            if(write_idx < kBuffSize)
+            if(t.write_idx < t.buffer_size)
             {
-                buffer_l[write_idx] = selected_input;
-                buffer_r[write_idx] = selected_input;
-                write_idx++;
+                t.buffer_l[t.write_idx] = selected_input;
+                t.buffer_r[t.write_idx] = selected_input;
+                t.write_idx++;
             }
-            out[0][i] = selected_input * T1_Volume;
-            out[1][i] = selected_input * T1_Volume;
+            out[0][i] = selected_input * t.volume;
+            out[1][i] = selected_input * t.volume;
         }
-        else if(recorded && record_len > 0 && !paused)
+        else if(t.recorded && t.record_len > 0 && !t.paused)
         {
             // Interpolated playback for variable speed
-            int idx0 = (int)play_pos;
-            int idx1 = (idx0 + 1) % record_len;
-            float frac = play_pos - idx0;
+            int idx0 = (int)t.play_pos;
+            int idx1 = (idx0 + 1) % t.record_len;
+            float frac = t.play_pos - idx0;
 
-            out[0][i] = (buffer_l[idx0] * (1.0f - frac) + buffer_l[idx1] * frac) * T1_Volume * panL;
-            out[1][i] = (buffer_r[idx0] * (1.0f - frac) + buffer_r[idx1] * frac) * T1_Volume * panR;
+            out[0][i] = (t.buffer_l[idx0] * (1.0f - frac) + t.buffer_l[idx1] * frac) * t.volume * panL;
+            out[1][i] = (t.buffer_r[idx0] * (1.0f - frac) + t.buffer_r[idx1] * frac) * t.volume * panR;
 
-            play_pos += speed;
-            while(play_pos >= record_len) play_pos -= record_len;
-            while(play_pos < 0) play_pos += record_len;
+            t.play_pos += t.speed;
+            while(t.play_pos >= t.record_len) t.play_pos -= t.record_len;
+            while(t.play_pos < 0) t.play_pos += t.record_len;
         }
         else
         {
@@ -174,25 +229,19 @@ void AudioCallback(AudioHandle::InputBuffer in,
     }
 }
 
+// --- Audio Callback ---
+void AudioCallback(AudioHandle::InputBuffer in,
+                   AudioHandle::OutputBuffer out,
+                   size_t size)
+{
+    ProcessTrack(track1, in, out, size);
+    // For more tracks, call ProcessTrack for each track
+}
+
+// --- Main ---
 int main(void)
 {
-    hw.Configure();
-    hw.Init();
-
-    // Init button and LEDs
-    Ch1Button.Init(hw.GetPin(17), 1000);
-    ch1_record_led.Init(D15, GPIO::Mode::OUTPUT);
-    ch1_play_led.Init(D16, GPIO::Mode::OUTPUT);
-    input_select_switch.Init(D21, GPIO::Mode::INPUT, GPIO::Pull::PULLUP);
-
-    // Init ADC for potentiometers
-    T1_Speed_adc_cfg.InitSingle(D19);
-    T1_Volume_adc_cfg.InitSingle(D20);
-    T1_PAN_adc_cfg.InitSingle(D22);
-    AdcChannelConfig adc_cfgs[3] = {T1_Speed_adc_cfg, T1_Volume_adc_cfg, T1_PAN_adc_cfg};
-    hw.adc.Init(adc_cfgs, 3);
-    hw.adc.Start();
-
+    SetupHardware();
     hw.StartAudio(AudioCallback);
     while(1) {}
 }
