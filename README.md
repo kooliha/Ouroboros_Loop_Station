@@ -1,10 +1,12 @@
 # ♾️ Ouroboros Loop Station
+DIY 5-Track Audio Looper
 
 ![Ouroboros Loop Station](docs/ouroboros-banner.png)
 
-**Ouroboros** is a DIY-friendly **5-track loop station** built on the **Daisy Seed**.  
-It’s simple, fast, no menu diving, no fluff.  
-Made for musicians and tinkerers.
+Ouroboros is a DIY 5-track stereo loop station designed for musicians, producers, and synth enthusiasts.
+Built on the Electrosmith Daisy Seed platform, it offers real-time looping with zero menu diving — just buttons and knobs.
+
+Ideal for live looping, modular performance, or guitar pedalboard integration.
 
 
 ## Key Features
@@ -40,4 +42,3 @@ Made for musicians and tinkerers.
 
 > Project is in **active development**  
 > Hardware design is in the prototyping stage  
-
