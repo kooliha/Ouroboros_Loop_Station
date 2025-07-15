@@ -1,37 +1,6 @@
 #include "daisy_seed.h"
+#include "max7219.h"
 using namespace daisy;
-
-struct Max7219
-{
-    SpiHandle* spi;
-    GPIO cs;
-
-    void Init(SpiHandle* spi_handle, Pin cs_pin)
-    {
-        spi = spi_handle;
-        cs.Init(cs_pin, GPIO::Mode::OUTPUT);
-        cs.Write(true);
-
-        // MAX7219 init sequence
-        Send(0x09, 0x00); // Decode mode: none
-        Send(0x0A, 0x03); // Intensity: 3
-        Send(0x0B, 0x07); // Scan limit: all digits
-        Send(0x0C, 0x01); // Normal operation
-        Send(0x0F, 0x00); // Display test: off
-
-        // Clear display
-        for (uint8_t i = 1; i <= 8; i++)
-            Send(i, 0x00);
-    }
-
-    void Send(uint8_t reg, uint8_t data)
-    {
-        cs.Write(false);
-        uint8_t buf[2] = {reg, data};
-        spi->BlockingTransmit(buf, 2, 1000);
-        cs.Write(true);
-    }
-};
 
 DaisySeed hw;
 SpiHandle spi;
@@ -60,21 +29,19 @@ int main(void)
 
     LedDriver.Init(&spi, daisy::seed::D7); // Use D7 for CS/LOAD
 
-while(1)
-{
+    while(1)
+    {
+        LedDriver.Send(2, 0x40); // A Dig1 Track 5 Rec
+        LedDriver.Send(2, 0x80); // DP Dig1. Track 5 Play
+        LedDriver.Send(1, 0x01); // G Dig0. Track 4 Rec
+        LedDriver.Send(1, 0x02); // F Dig0. Track 4 Play
+        LedDriver.Send(1, 0x04); // E Dig0. Track 3 Rec
+        LedDriver.Send(1, 0x08); // D Dig0. Track 3 Play
+        LedDriver.Send(1, 0x10); // C Dig0. Track 2 Rec
+        LedDriver.Send(1, 0x20); // B Dig0. Track 2 Play
+        LedDriver.Send(1, 0x40); // A Dig0. Track 1 Rec        
+        LedDriver.Send(1, 0x80); // DP Dig0. Track 1 Play
 
-LedDriver.Send(1, 0x01); // G Dig0. Track 1 Play
-LedDriver.Send(1, 0x02); // F Dig0. Track 1 Rec
-LedDriver.Send(1, 0x04); // E Dig0. Track 2 Play
-LedDriver.Send(1, 0x08); // D Dig0. Track 2 Rec
-LedDriver.Send(1, 0x10); // C Dig0. Track 3 Play
-LedDriver.Send(1, 0x20); // B Dig0. Track 3 Rec
-LedDriver.Send(1, 0x40); // A Dig0. Track 4 Play        
-LedDriver.Send(1, 0x80); // DP Dig0. Track 4 Rec
-LedDriver.Send(2, 0x80); // DP Dig1. Track 5 Play
-LedDriver.Send(2, 0x40); // A Dig1 Track 5 Rec
 
-    
-}
-
+    }
 }
