@@ -1,9 +1,18 @@
 #include "daisy_seed.h"
 #include "daisysp.h"
+#include "max7219.h"
 
 using namespace daisy;
 using namespace daisy::seed;
 using namespace daisysp;
+
+Max7219 LedDriver;
+
+// MAX7219 segment addresses for LEDs
+constexpr uint8_t LED_TRACK1_REC  = 0x40; // A
+constexpr uint8_t LED_TRACK1_PLAY = 0x80; // DP
+constexpr uint8_t LED_TRACK2_REC  = 0x10; // C
+constexpr uint8_t LED_TRACK2_PLAY = 0x20; // B
 
 // --- Track Structure ---
 struct LooperTrack
@@ -27,8 +36,6 @@ struct LooperTrack
 
     // Hardware
     Switch* button = nullptr;
-    GPIO* record_led = nullptr;
-    GPIO* play_led = nullptr;
     GPIO* input_select_switch = nullptr;
 
     // Multi-click detection
@@ -67,39 +74,47 @@ void SetupHardware()
     hw.Configure();
     hw.Init();
 
+    // SPI configuration for Daisy Seed rev 7
+    SpiHandle::Config spi_cfg;
+    spi_cfg.periph = SpiHandle::Config::Peripheral::SPI_1;
+    spi_cfg.mode   = SpiHandle::Config::Mode::MASTER;
+    spi_cfg.direction = SpiHandle::Config::Direction::TWO_LINES_TX_ONLY;
+    spi_cfg.datasize  = 8;
+    spi_cfg.clock_polarity  = SpiHandle::Config::ClockPolarity::LOW;
+    spi_cfg.clock_phase     = SpiHandle::Config::ClockPhase::ONE_EDGE;
+    spi_cfg.nss             = SpiHandle::Config::NSS::SOFT;
+    spi_cfg.baud_prescaler  = SpiHandle::Config::BaudPrescaler::PS_64;
+    spi_cfg.pin_config.sclk = daisy::seed::D8;   // SCK
+    spi_cfg.pin_config.miso = daisy::seed::D9;   // MISO (not used for MAX7219)
+    spi_cfg.pin_config.mosi = daisy::seed::D10;  // MOSI
+
+    static SpiHandle spi;
+    spi.Init(spi_cfg);
+
+    LedDriver.Init(&spi, daisy::seed::D7); // Use D7 for CS/LOAD
+
     // Track 1 hardware
     static Switch ch1_button;
-    static GPIO ch1_record_led, ch1_play_led, ch1_input_select;
+    static GPIO ch1_input_select;
     ch1_button.Init(hw.GetPin(17), 1000);
-    ch1_record_led.Init(D15, GPIO::Mode::OUTPUT);
-    ch1_play_led.Init(D16, GPIO::Mode::OUTPUT);
     ch1_input_select.Init(D21, GPIO::Mode::INPUT, GPIO::Pull::PULLUP);
 
     track1.buffer_l = buffer_l1;
     track1.buffer_r = buffer_r1;
     track1.buffer_size = kBuffSize;
     track1.button = &ch1_button;
-    track1.record_led = &ch1_record_led;
-    track1.play_led = &ch1_play_led;
     track1.input_select_switch = &ch1_input_select;
 
-
-
-    
     // Track 2 hardware
     static Switch ch2_button;
-    static GPIO ch2_record_led, ch2_play_led, ch2_input_select;
+    static GPIO ch2_input_select;
     ch2_button.Init(hw.GetPin(18), 1000);
-    ch2_record_led.Init(D23, GPIO::Mode::OUTPUT);
-    ch2_play_led.Init(D24, GPIO::Mode::OUTPUT);
     ch2_input_select.Init(D25, GPIO::Mode::INPUT, GPIO::Pull::PULLUP);
 
     track2.buffer_l = buffer_l2;
     track2.buffer_r = buffer_r2;
     track2.buffer_size = kBuffSize;
     track2.button = &ch2_button;
-    track2.record_led = &ch2_record_led;
-    track2.play_led = &ch2_play_led;
     track2.input_select_switch = &ch2_input_select;
 
     // ADC setup for speed, volume, pan for both tracks
@@ -181,34 +196,25 @@ void ProcessTrack(LooperTrack& t, int adc_offset, AudioHandle::InputBuffer in, A
     }
     was_pressed[track_idx] = pressed;
 
-    // LED feedback
-    t.record_led->Write(t.recording);
-    t.play_led->Write(t.recorded && !t.recording && !t.paused);
+    // --- LED feedback using MAX7219 ---
+    uint8_t segs = 0x00;
+    if(track1.recording) segs |= LED_TRACK1_REC;
+    if(track1.recorded && !track1.recording && !track1.paused) segs |= LED_TRACK1_PLAY;
+    if(track2.recording) segs |= LED_TRACK2_REC;
+    if(track2.recorded && !track2.recording && !track2.paused) segs |= LED_TRACK2_PLAY;
+    LedDriver.Send(1, segs);
 
     // --- Read pots for this track ---
-   // float speed_pot = hw.adc.GetFloat(adc_offset + 0);
-  //  float vol_pot   = hw.adc.GetFloat(adc_offset + 1);
-   // float pan_pot   = hw.adc.GetFloat(adc_offset + 2);
-
-   float speed_pot, vol_pot, pan_pot;
-if(&t == &track2) {
-    speed_pot = 0.5f;
-    vol_pot   = 1.0f;
-    pan_pot   = 0.5f;
-} else {
-    speed_pot = hw.adc.GetFloat(adc_offset + 0);
-    vol_pot   = hw.adc.GetFloat(adc_offset + 1);
-    pan_pot   = hw.adc.GetFloat(adc_offset + 2);
-}
-
-
-
-
-
-
-
-
-
+    float speed_pot, vol_pot, pan_pot;
+    if(&t == &track2) {
+        speed_pot = 0.5f;
+        vol_pot   = 1.0f;
+        pan_pot   = 0.5f;
+    } else {
+        speed_pot = hw.adc.GetFloat(adc_offset + 0);
+        vol_pot   = hw.adc.GetFloat(adc_offset + 1);
+        pan_pot   = hw.adc.GetFloat(adc_offset + 2);
+    }
 
     // Speed logic
     const float center = 0.5f;
