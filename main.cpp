@@ -5,7 +5,7 @@ using namespace daisy;
 using namespace daisy::seed;
 
 DaisySeed hw;
-74HC165 ReadButtons;
+SR74HC165 ReadButtons;
 
 void SetupHardware()
 {
