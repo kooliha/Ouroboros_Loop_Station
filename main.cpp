@@ -21,6 +21,15 @@ float DSY_SDRAM_BSS buffer_r1[kBuffSize];
 float DSY_SDRAM_BSS buffer_l2[kBuffSize];
 float DSY_SDRAM_BSS buffer_r2[kBuffSize];
 
+
+// LED definitions for both layers
+constexpr uint8_t LED_LAYER1_REC  = 0x40; // A
+constexpr uint8_t LED_LAYER1_PLAY = 0x80; // DP
+constexpr uint8_t LED_LAYER2_REC  = 0x10; // C
+constexpr uint8_t LED_LAYER2_PLAY = 0x20; // B
+
+
+
 // --- Hardware Setup ---
 void SetupHardware()
 {
@@ -62,6 +71,8 @@ void SetupHardware()
 
     layer2.Init(buffer_l2, buffer_r2, kBuffSize, &ch2_button, &ch2_input_select);
 
+
+
     // ADC setup for speed, volume, pan for both layers
     static AdcChannelConfig speed_adc1, volume_adc1, pan_adc1;
     static AdcChannelConfig speed_adc2, volume_adc2, pan_adc2;
@@ -80,6 +91,8 @@ void SetupHardware()
     hw.adc.Init(adc_cfgs, 6);
     hw.adc.Start();
 }
+
+
 
 // --- Audio Callback ---
 void AudioCallback(AudioHandle::InputBuffer in,

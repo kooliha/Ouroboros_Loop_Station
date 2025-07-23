@@ -30,3 +30,4 @@ struct Max7219
         cs.Write(true);
     }
 };
+
