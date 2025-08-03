@@ -7,20 +7,27 @@ using namespace daisy;
 using namespace daisy::seed;
 using namespace daisysp;
 
-#define kBuffSize (48000 * 66) // 2.5 minutes of floats at 48 kHz
+#define kBuffSize 1600000 // ~33 seconds at 48kHz per each layer (5 in total)
+#define kNumLayers 5
 
 DaisySeed hw;
 Max7219 LedDriver;
 
-float DSY_SDRAM_BSS buffer_l[2][kBuffSize];
-float DSY_SDRAM_BSS buffer_r[2][kBuffSize];
-LooperLayer layers[2];
+float DSY_SDRAM_BSS buffer_l[kNumLayers][kBuffSize];
+float DSY_SDRAM_BSS buffer_r[kNumLayers][kBuffSize];
+
+LooperLayer layers[kNumLayers];
 
 Switch record_play_button;
 GPIO input_select_switch;
-Switch layer_select_button;
+Switch layer1_select_button;
+Switch layer2_select_button;
+Switch layer3_select_button;
+Switch layer4_select_button;
+Switch layer5_select_button;
 
-int selected_layer = 0; // 0 = Layer 1, 1 = Layer 2
+// Layer selection
+int selected_layer = 0; // 0 = Layer 1
 
 void SetupHardware()
 {
@@ -47,9 +54,15 @@ void SetupHardware()
     LedDriver.Init(&spi, daisy::seed::D7);
 
     // Main controls (shared)
-    record_play_button.Init(D17, 1000);        // Record/Play button
+    record_play_button.Init(D17, 300);        // Record/Play button
     input_select_switch.Init(D21, GPIO::Mode::INPUT, GPIO::Pull::PULLUP); // Input select switch
-    layer_select_button.Init(A8, 1000);        // Layer select button
+
+    // Layer select buttons
+    layer1_select_button.Init(D14, 300); // Layer 1 select button
+    layer2_select_button.Init(D13, 300); // Layer 2 select button
+    layer3_select_button.Init(D12, 300); // Layer 3 select button
+    layer4_select_button.Init(D11, 300); // Layer 4 select button
+    layer5_select_button.Init(D6, 300);  // Layer 5 select button
 
     // ADC pins for main controls (3 knobs)
     daisy::Pin adc_pins[3] = {D19, D20, D22};
@@ -60,26 +73,43 @@ void SetupHardware()
     hw.adc.Start();
 
     // Layer buffers
-    for(int i = 0; i < 2; i++)
+    for(int i = 0; i < kNumLayers; i++)
     {
         layers[i].buffer_l = buffer_l[i];
         layers[i].buffer_r = buffer_r[i];
         layers[i].buffer_size = kBuffSize;
+        layers[i].paused = false;
     }
 }
 
 void UpdateLEDs()
 {
-    uint8_t segs = 0x00;
-    // Recording/playing status
-    if(layers[0].recording) segs |= LED_LAYER1_REC;
-    if(layers[0].recorded && !layers[0].recording && !layers[0].paused) segs |= LED_LAYER1_PLAY;
-    if(layers[1].recording) segs |= LED_LAYER2_REC;
-    if(layers[1].recorded && !layers[1].recording && !layers[1].paused) segs |= LED_LAYER2_PLAY;
-    // Selected layer indicator
-    if(selected_layer == 0) segs |= LED_LAYER1_Selected;
-    if(selected_layer == 1) segs |= LED_LAYER2_Selected;
-    LedDriver.Send(1, segs);
+    uint8_t segs_dig0 = 0x00;
+    uint8_t segs_dig1 = 0x00;
+
+    // Dig0: Recording/playing status for layers 1-4
+    if(layers[0].recording) segs_dig0 |= LED_LAYER1_REC.segment;
+    if(layers[0].recorded && !layers[0].recording && !layers[0].paused) segs_dig0 |= LED_LAYER1_PLAY.segment;
+    if(layers[1].recording) segs_dig0 |= LED_LAYER2_REC.segment;
+    if(layers[1].recorded && !layers[1].recording && !layers[1].paused) segs_dig0 |= LED_LAYER2_PLAY.segment;
+    if(layers[2].recording) segs_dig0 |= LED_LAYER3_REC.segment;
+    if(layers[2].recorded && !layers[2].recording && !layers[2].paused) segs_dig0 |= LED_LAYER3_PLAY.segment;
+    if(layers[3].recording) segs_dig0 |= LED_LAYER4_REC.segment;
+    if(layers[3].recorded && !layers[3].recording && !layers[3].paused) segs_dig0 |= LED_LAYER4_PLAY.segment;
+
+    // Dig1: Layer 5 play/rec
+    if(layers[4].recording) segs_dig1 |= LED_LAYER5_REC.segment;
+    if(layers[4].recorded && !layers[4].recording && !layers[4].paused) segs_dig1 |= LED_LAYER5_PLAY.segment;
+
+    // Dig1: Selected layer indicator for all layers
+    if(selected_layer == 0) segs_dig1 |= LED_LAYER1_Selected.segment;
+    if(selected_layer == 1) segs_dig1 |= LED_LAYER2_Selected.segment;
+    if(selected_layer == 2) segs_dig1 |= LED_LAYER3_Selected.segment;
+    if(selected_layer == 3) segs_dig1 |= LED_LAYER4_Selected.segment;
+    if(selected_layer == 4) segs_dig1 |= LED_LAYER5_Selected.segment;
+
+    LedDriver.Send(LED_LAYER1_PLAY.digit, segs_dig0); // Dig0
+    LedDriver.Send(LED_LAYER1_Selected.digit, segs_dig1); // Dig1
 }
 
 void AudioCallback(AudioHandle::InputBuffer in,
@@ -92,15 +122,30 @@ void AudioCallback(AudioHandle::InputBuffer in,
         out[1][i] = 0.0f;
     }
 
-    // Layer select button debounce and switching
-    layer_select_button.Debounce();
-    static bool last_layer_btn = false;
-    bool layer_btn_pressed = layer_select_button.Pressed();
-    if(!last_layer_btn && layer_btn_pressed)
+    // Layer select buttons debounce and switching
+    layer1_select_button.Debounce();
+    layer2_select_button.Debounce();
+    layer3_select_button.Debounce();
+    layer4_select_button.Debounce();
+    layer5_select_button.Debounce();
+
+    static bool last_layer_btn[5] = {false, false, false, false, false};
+    bool layer_btn_pressed[5] = {
+        layer1_select_button.Pressed(),
+        layer2_select_button.Pressed(),
+        layer3_select_button.Pressed(),
+        layer4_select_button.Pressed(),
+        layer5_select_button.Pressed()
+    };
+
+    for(int i = 0; i < kNumLayers; i++)
     {
-        selected_layer = 1 - selected_layer; // Toggle between 0 and 1
+        if(!last_layer_btn[i] && layer_btn_pressed[i])
+        {
+            selected_layer = i;
+        }
+        last_layer_btn[i] = layer_btn_pressed[i];
     }
-    last_layer_btn = layer_btn_pressed;
 
     // Process main controls for selected layer
     layers[selected_layer].Process(
@@ -111,9 +156,12 @@ void AudioCallback(AudioHandle::InputBuffer in,
         &hw
     );
 
-    // Process playback for non-selected layer (no controls, just playback)
-    int other_layer = 1 - selected_layer;
-    layers[other_layer].ProcessPlaybackOnly(in, out, size, &hw);
+    // Process playback for all non-selected layers
+    for(int i = 0; i < kNumLayers; i++)
+    {
+        if(i != selected_layer)
+            layers[i].ProcessPlaybackOnly(in, out, size, &hw);
+    }
 
     UpdateLEDs();
 }

@@ -1,13 +1,35 @@
 #pragma once
 #include "daisy_seed.h"
 
-// LED segment addresses for layers
-constexpr uint8_t LED_LAYER1_PLAY     = 0x80; // DP
-constexpr uint8_t LED_LAYER1_REC      = 0x40; // A
-constexpr uint8_t LED_LAYER2_PLAY     = 0x20; // B
-constexpr uint8_t LED_LAYER2_REC      = 0x10; // C
-constexpr uint8_t LED_LAYER1_Selected = 0x08; // D
-constexpr uint8_t LED_LAYER2_Selected = 0x04; // E
+struct LedIndicator
+{
+    uint8_t digit;   // 1 = Dig0, 2 = Dig1, etc.
+    uint8_t segment; // Segment bitmask
+};
+
+// Layer play/rec indicators
+constexpr LedIndicator LED_LAYER1_PLAY     = {1, 0x80}; // DP Dig0
+constexpr LedIndicator LED_LAYER1_REC      = {1, 0x40}; // A Dig0
+
+constexpr LedIndicator LED_LAYER2_PLAY     = {1, 0x20}; // B Dig0
+constexpr LedIndicator LED_LAYER2_REC      = {1, 0x10}; // C Dig0
+
+constexpr LedIndicator LED_LAYER3_PLAY     = {1, 0x08}; // D Dig0
+constexpr LedIndicator LED_LAYER3_REC      = {1, 0x04}; // E Dig0
+
+constexpr LedIndicator LED_LAYER4_PLAY     = {1, 0x02}; // F Dig0
+constexpr LedIndicator LED_LAYER4_REC      = {1, 0x01}; // G Dig0
+
+constexpr LedIndicator LED_LAYER5_PLAY     = {2, 0x80}; // DP Dig1
+constexpr LedIndicator LED_LAYER5_REC      = {2, 0x40}; // A Dig1
+
+// Layer selected indicators
+constexpr LedIndicator LED_LAYER1_Selected = {2, 0x20}; // B Dig1
+constexpr LedIndicator LED_LAYER2_Selected = {2, 0x10}; // C Dig1
+constexpr LedIndicator LED_LAYER3_Selected = {2, 0x08}; // D Dig1
+constexpr LedIndicator LED_LAYER4_Selected = {2, 0x04}; // E Dig1
+constexpr LedIndicator LED_LAYER5_Selected = {2, 0x02}; // F Dig1
+
 
 struct Max7219
 {
