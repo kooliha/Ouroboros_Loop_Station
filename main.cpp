@@ -6,16 +6,9 @@ using namespace daisy;
 using namespace daisy::seed;
 using namespace daisysp;
 
-Max7219 LedDriver;
 
-// MAX7219 segment addresses for LEDs
-constexpr uint8_t LED_TRACK1_REC  = 0x40; // A
-constexpr uint8_t LED_TRACK1_PLAY = 0x80; // DP
-constexpr uint8_t LED_TRACK2_REC  = 0x10; // C
-constexpr uint8_t LED_TRACK2_PLAY = 0x20; // B
-
-// --- Track Structure ---
-struct LooperTrack
+// --- Layer Structure ---
+struct LooperLayer
 {
     float* buffer_l;
     float* buffer_r;
@@ -57,6 +50,7 @@ struct LooperTrack
 
 // --- Globals ---
 DaisySeed hw;
+Max7219 LedDriver;
 
 #define kBuffSize (48000 * 66) // 2.5 minutes of floats at 48 kHz
 
@@ -65,8 +59,8 @@ float DSY_SDRAM_BSS buffer_r1[kBuffSize];
 float DSY_SDRAM_BSS buffer_l2[kBuffSize];
 float DSY_SDRAM_BSS buffer_r2[kBuffSize];
 
-LooperTrack track1;
-LooperTrack track2;
+LooperLayer layer1;
+LooperLayer layer2;
 
 // --- Hardware Setup ---
 void SetupHardware()
@@ -93,31 +87,31 @@ void SetupHardware()
 
     LedDriver.Init(&spi, daisy::seed::D7); // Use D7 for CS/LOAD
 
-    // Track 1 hardware
-    static Switch ch1_button;
-    static GPIO ch1_input_select;
-    ch1_button.Init(hw.GetPin(17), 1000);
-    ch1_input_select.Init(D21, GPIO::Mode::INPUT, GPIO::Pull::PULLUP);
+    // Layer 1 hardware
+    static Switch l1_button;
+    static GPIO l1_input_select;
+    l1_button.Init(hw.GetPin(17), 1000);
+    l1_input_select.Init(D21, GPIO::Mode::INPUT, GPIO::Pull::PULLUP);
 
-    track1.buffer_l = buffer_l1;
-    track1.buffer_r = buffer_r1;
-    track1.buffer_size = kBuffSize;
-    track1.button = &ch1_button;
-    track1.input_select_switch = &ch1_input_select;
+    layer1.buffer_l = buffer_l1;
+    layer1.buffer_r = buffer_r1;
+    layer1.buffer_size = kBuffSize;
+    layer1.button = &l1_button;
+    layer1.input_select_switch = &l1_input_select;
 
-    // Track 2 hardware
-    static Switch ch2_button;
-    static GPIO ch2_input_select;
-    ch2_button.Init(hw.GetPin(18), 1000);
-    ch2_input_select.Init(D25, GPIO::Mode::INPUT, GPIO::Pull::PULLUP);
+    // Layer 2 hardware
+    static Switch l2_button;
+    static GPIO l2_input_select;
+    l2_button.Init(hw.GetPin(18), 1000);
+    l2_input_select.Init(D25, GPIO::Mode::INPUT, GPIO::Pull::PULLUP);
 
-    track2.buffer_l = buffer_l2;
-    track2.buffer_r = buffer_r2;
-    track2.buffer_size = kBuffSize;
-    track2.button = &ch2_button;
-    track2.input_select_switch = &ch2_input_select;
+    layer2.buffer_l = buffer_l2;
+    layer2.buffer_r = buffer_r2;
+    layer2.buffer_size = kBuffSize;
+    layer2.button = &l2_button;
+    layer2.input_select_switch = &l2_input_select;
 
-    // ADC setup for speed, volume, pan for both tracks
+    // ADC setup for speed, volume, pan for both layers
     static AdcChannelConfig speed_adc1, volume_adc1, pan_adc1;
     static AdcChannelConfig speed_adc2, volume_adc2, pan_adc2;
     speed_adc1.InitSingle(D19);
@@ -136,80 +130,80 @@ void SetupHardware()
     hw.adc.Start();
 }
 
-// --- Track Processing ---
-void ProcessTrack(LooperTrack& t, int adc_offset, AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, size_t size)
+// --- Layer Processing ---
+void ProcessLayer(LooperLayer& l, int adc_offset, AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, size_t size)
 {
-    t.button->Debounce();
+    l.button->Debounce();
 
     // --- Button logic ---
     static bool was_pressed[2] = {false, false};
-    int track_idx = (t.button == track1.button) ? 0 : 1;
-    bool pressed = t.button->Pressed();
+    int layer_idx = (l.button == layer1.button) ? 0 : 1;
+    bool pressed = l.button->Pressed();
 
     // Start recording on long press
-    if(t.button->TimeHeldMs() > 400 && pressed && !t.recording)
+    if(l.button->TimeHeldMs() > 400 && pressed && !l.recording)
     {
-        t.recording = true;
-        t.write_idx = 0;
-        t.recorded = false;
-        t.paused = false;
-        t.click_count = 0;
+        l.recording = true;
+        l.write_idx = 0;
+        l.recorded = false;
+        l.paused = false;
+        l.click_count = 0;
     }
 
     // On release
-    if(was_pressed[track_idx] && !pressed)
+    if(was_pressed[layer_idx] && !pressed)
     {
-        if(t.recording)
+        if(l.recording)
         {
-            t.recording = false;
-            t.record_len = t.write_idx > 0 ? t.write_idx : 1;
-            t.play_pos = 0.0f;
-            t.recorded = true;
+            l.recording = false;
+            l.record_len = l.write_idx > 0 ? l.write_idx : 1;
+            l.play_pos = 0.0f;
+            l.recorded = true;
         }
         else
         {
             uint32_t now = System::GetNow();
-            if(now - t.last_release < t.double_click_time)
+            if(now - l.last_release < l.double_click_time)
             {
-                t.click_count++;
+                l.click_count++;
             }
             else
             {
-                t.click_count = 1;
+                l.click_count = 1;
             }
-            t.last_release = now;
+            l.last_release = now;
 
-            if(t.click_count == 2)
+            if(l.click_count == 2)
             {
-                t.recorded = false;
-                t.record_len = 0;
-                t.play_pos = 0.0f;
-                t.click_count = 0;
-                t.paused = false;
+                l.recorded = false;
+                l.record_len = 0;
+                l.play_pos = 0.0f;
+                l.click_count = 0;
+                l.paused = false;
             }
-            else if(t.click_count == 1)
+            else if(l.click_count == 1)
             {
-                if(t.recorded)
-                    t.paused = !t.paused;
+                if(l.recorded)
+                    l.paused = !l.paused;
             }
         }
     }
-    was_pressed[track_idx] = pressed;
+    was_pressed[layer_idx] = pressed;
 
     // --- LED feedback using MAX7219 ---
     uint8_t segs = 0x00;
-    if(track1.recording) segs |= LED_TRACK1_REC;
-    if(track1.recorded && !track1.recording && !track1.paused) segs |= LED_TRACK1_PLAY;
-    if(track2.recording) segs |= LED_TRACK2_REC;
-    if(track2.recorded && !track2.recording && !track2.paused) segs |= LED_TRACK2_PLAY;
+    if(layer1.recording) segs |= LED_LAYER1_REC;
+    if(layer1.recorded && !layer1.recording && !layer1.paused) segs |= LED_LAYER1_PLAY;
+    if(layer2.recording) segs |= LED_LAYER2_REC;
+    if(layer2.recorded && !layer2.recording && !layer2.paused) segs |= LED_LAYER2_PLAY;
     LedDriver.Send(1, segs);
 
-    // --- Read pots for this track ---
+    // --- Read pots for this layer ---
     float speed_pot, vol_pot, pan_pot;
-    if(&t == &track2) {
-        speed_pot = 0.5f;
-        vol_pot   = 1.0f;
-        pan_pot   = 0.5f;
+    if(&l == &layer2) {
+        speed_pot = hw.adc.GetFloat(adc_offset + 0);
+        vol_pot   = hw.adc.GetFloat(adc_offset + 1);
+        pan_pot   = hw.adc.GetFloat(adc_offset + 2);
     } else {
         speed_pot = hw.adc.GetFloat(adc_offset + 0);
         vol_pot   = hw.adc.GetFloat(adc_offset + 1);
@@ -222,26 +216,26 @@ void ProcessTrack(LooperTrack& t, int adc_offset, AudioHandle::InputBuffer in, A
     if(speed_pot < center - dead_zone)
     {
         float tt = (speed_pot - 0.0f) / (center - dead_zone);
-        t.speed = 0.3f + tt * (1.0f - 0.3f);
+        l.speed = 0.3f + tt * (1.0f - 0.3f);
     }
     else if(speed_pot > center + dead_zone)
     {
         float tt = (speed_pot - (center + dead_zone)) / (1.0f - (center + dead_zone));
-        t.speed = 1.0f + tt * (2.0f - 1.0f);
+        l.speed = 1.0f + tt * (2.0f - 1.0f);
     }
     else
     {
-        t.speed = 1.0f;
+        l.speed = 1.0f;
     }
 
-    t.volume = powf(vol_pot, 2.5f) * 3.0f;
-    if(t.volume < 0.0f) t.volume = 0.0f;
-    t.pan = pan_pot;
-    float panL = 1.0f - t.pan;
-    float panR = t.pan;
+    l.volume = powf(vol_pot, 2.5f) * 3.0f;
+    if(l.volume < 0.0f) l.volume = 0.0f;
+    l.pan = pan_pot;
+    float panL = 1.0f - l.pan;
+    float panR = l.pan;
 
     // --- Input selection ---
-    bool input_selection = (t.input_select_switch->Read() == 0); // LOW = mic, HIGH = guitar
+    bool input_selection = (l.input_select_switch->Read() == 0); // LOW = mic, HIGH = guitar
 
     for(size_t i = 0; i < size; i++)
     {
@@ -249,33 +243,33 @@ void ProcessTrack(LooperTrack& t, int adc_offset, AudioHandle::InputBuffer in, A
         float guitar_in = in[1][i];
         float selected_input = input_selection ? mic_in : guitar_in;
 
-        if(t.recording)
+        if(l.recording)
         {
-            if(t.write_idx < t.buffer_size)
+            if(l.write_idx < l.buffer_size)
             {
-                t.buffer_l[t.write_idx] = selected_input;
-                t.buffer_r[t.write_idx] = selected_input;
-                t.write_idx++;
+                l.buffer_l[l.write_idx] = selected_input;
+                l.buffer_r[l.write_idx] = selected_input;
+                l.write_idx++;
             }
-            out[0][i] += selected_input * t.volume;
-            out[1][i] += selected_input * t.volume;
+            out[0][i] += selected_input * l.volume;
+            out[1][i] += selected_input * l.volume;
         }
-        else if(t.recorded && t.record_len > 0 && !t.paused)
+        else if(l.recorded && l.record_len > 0 && !l.paused)
         {
-            int idx0 = (int)t.play_pos;
-            int idx1 = (idx0 + 1) % t.record_len;
-            float frac = t.play_pos - idx0;
+            int idx0 = (int)l.play_pos;
+            int idx1 = (idx0 + 1) % l.record_len;
+            float frac = l.play_pos - idx0;
 
-            out[0][i] += (t.buffer_l[idx0] * (1.0f - frac) + t.buffer_l[idx1] * frac) * t.volume * panL;
-            out[1][i] += (t.buffer_r[idx0] * (1.0f - frac) + t.buffer_r[idx1] * frac) * t.volume * panR;
+            out[0][i] += (l.buffer_l[idx0] * (1.0f - frac) + l.buffer_l[idx1] * frac) * l.volume * panL;
+            out[1][i] += (l.buffer_r[idx0] * (1.0f - frac) + l.buffer_r[idx1] * frac) * l.volume * panR;
 
-            t.play_pos += t.speed;
-            while(t.play_pos >= t.record_len) t.play_pos -= t.record_len;
-            while(t.play_pos < 0) t.play_pos += t.record_len;
+            l.play_pos += l.speed;
+            while(l.play_pos >= l.record_len) l.play_pos -= l.record_len;
+            while(l.play_pos < 0) l.play_pos += l.record_len;
         }
         else
         {
-            // Do not clear output here, so tracks can mix
+            // Do not clear output here, so layers can mix
         }
     }
 }
@@ -292,9 +286,9 @@ void AudioCallback(AudioHandle::InputBuffer in,
         out[1][i] = 0.0f;
     }
 
-    // Process both tracks (adc_offset: 0 for track1, 3 for track2)
-    ProcessTrack(track1, 0, in, out, size);
-    ProcessTrack(track2, 3, in, out, size);
+    // Process both layers (adc_offset: 0 for layer1, 3 for layer2)
+    ProcessLayer(layer1, 0, in, out, size);
+    ProcessLayer(layer2, 3, in, out, size);
 }
 
 // --- Main ---
