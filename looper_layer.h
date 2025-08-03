@@ -1,7 +1,6 @@
 #pragma once
 #include "daisy_seed.h"
 #include "daisysp.h"
-#include "max7219.h"
 
 using namespace daisy;
 using namespace daisy::seed;
@@ -25,10 +24,6 @@ struct LooperLayer
     float volume = 1.0f;
     float pan = 0.5f;
 
-    // Hardware
-    Switch* button = nullptr;
-    GPIO* input_select_switch = nullptr;
-
     // Multi-click detection
     uint32_t last_release = 0;
     int click_count = 0;
@@ -40,7 +35,12 @@ struct LooperLayer
                  AudioHandle::InputBuffer in,
                  AudioHandle::OutputBuffer out,
                  size_t size,
-                 Max7219* LedDriver,
-                 int layer_idx,
+                 Switch* record_play_button,
+                 GPIO* input_select_switch,
                  DaisySeed* hw);
+
+    void ProcessPlaybackOnly(AudioHandle::InputBuffer in,
+                             AudioHandle::OutputBuffer out,
+                             size_t size,
+                             DaisySeed* hw);
 };

@@ -16,17 +16,17 @@ void LooperLayer::Process(int adc_offset,
                           AudioHandle::InputBuffer in,
                           AudioHandle::OutputBuffer out,
                           size_t size,
-                          Max7219* LedDriver,
-                          int layer_idx,
+                          Switch* record_play_button,
+                          GPIO* input_select_switch,
                           DaisySeed* hw)
 {
-    button->Debounce();
+    record_play_button->Debounce();
 
-    static bool was_pressed[2] = {false, false};
-    bool pressed = button->Pressed();
+    static bool was_pressed = false;
+    bool pressed = record_play_button->Pressed();
 
     // Start recording on long press
-    if(button->TimeHeldMs() > 400 && pressed && !recording)
+    if(record_play_button->TimeHeldMs() > 400 && pressed && !recording)
     {
         recording = true;
         write_idx = 0;
@@ -36,7 +36,7 @@ void LooperLayer::Process(int adc_offset,
     }
 
     // On release
-    if(was_pressed[layer_idx] && !pressed)
+    if(was_pressed && !pressed)
     {
         if(recording)
         {
@@ -73,21 +73,7 @@ void LooperLayer::Process(int adc_offset,
             }
         }
     }
-    was_pressed[layer_idx] = pressed;
-
-    // --- LED feedback using MAX7219 ---
-    uint8_t segs = 0x00;
-    if(layer_idx == 0)
-    {
-        if(recording) segs |= LED_LAYER1_REC;
-        if(recorded && !recording && !paused) segs |= LED_LAYER1_PLAY;
-    }
-    else if(layer_idx == 1)
-    {
-        if(recording) segs |= LED_LAYER2_REC;
-        if(recorded && !recording && !paused) segs |= LED_LAYER2_PLAY;
-    }
-    LedDriver->Send(1, segs);
+    was_pressed = pressed;
 
     // --- Read pots for this layer ---
     float speed_pot = hw->adc.GetFloat(adc_offset + 0);
@@ -154,6 +140,32 @@ void LooperLayer::Process(int adc_offset,
         else
         {
             // Do not clear output here, so layers can mix
+        }
+    }
+}
+
+void LooperLayer::ProcessPlaybackOnly(AudioHandle::InputBuffer in,
+                                      AudioHandle::OutputBuffer out,
+                                      size_t size,
+                                      DaisySeed* hw)
+{
+    // Only playback, no controls
+    if(recorded && record_len > 0 && !paused)
+    {
+        float panL = 1.0f - pan;
+        float panR = pan;
+        for(size_t i = 0; i < size; i++)
+        {
+            int idx0 = (int)play_pos;
+            int idx1 = (idx0 + 1) % record_len;
+            float frac = play_pos - idx0;
+
+            out[0][i] += (buffer_l[idx0] * (1.0f - frac) + buffer_l[idx1] * frac) * volume * panL;
+            out[1][i] += (buffer_r[idx0] * (1.0f - frac) + buffer_r[idx1] * frac) * volume * panR;
+
+            play_pos += speed;
+            while(play_pos >= record_len) play_pos -= record_len;
+            while(play_pos < 0) play_pos += record_len;
         }
     }
 }
