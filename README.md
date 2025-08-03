@@ -12,8 +12,8 @@ Ideal for live looping, modular performance, or guitar pedalboard integration.
 ## Key Features
 
 - **5 independent stereo tracks**
-  - Up to **60 seconds** each at 48kHz
-  - Individual control of:
+  - Up to **30 seconds** each at 48kHz
+  -  Control:
     - Playback **Speed**: 0.3× to 2.0×
     - **Volume/Gain**
     - **Pan** (L/R balance)
@@ -41,4 +41,5 @@ Ideal for live looping, modular performance, or guitar pedalboard integration.
 ## 💬 Status
 
 > Project is in **active development**  
-> Hardware design is in the prototyping stage  
+> Schematic - Ready 
+> Code - Main part is ready, left to add Relays 
