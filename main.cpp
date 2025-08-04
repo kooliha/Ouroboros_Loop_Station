@@ -26,8 +26,13 @@ Switch layer3_select_button;
 Switch layer4_select_button;
 Switch layer5_select_button;
 
+Switch channel_button;
+
 // Layer selection
-int selected_layer = 0; // 0 = Layer 1
+int selected_layer = 0; // 0 = Layer 1, 1 = Layer 2, ..., 4 = Layer 5
+
+// Input selection
+int selected_channel = 0; // 0 = Guitar, 1 = Mic, 2 = Line
 
 void SetupHardware()
 {
@@ -64,6 +69,8 @@ void SetupHardware()
     layer4_select_button.Init(D11, 300); // Layer 4 select button
     layer5_select_button.Init(D6, 300);  // Layer 5 select button
 
+    channel_button.Init(D15, 300); // Channel select button, fast debounce
+
     // ADC pins for main controls (3 knobs)
     daisy::Pin adc_pins[3] = {D19, D20, D22};
     AdcChannelConfig adc_cfgs[3];
@@ -80,6 +87,16 @@ void SetupHardware()
         layers[i].buffer_size = kBuffSize;
         layers[i].paused = false;
     }
+}
+
+void UpdateChannelLEDs()
+{
+    uint8_t segs = 0x00;
+    if(selected_channel == 0) segs = LED_CHANNEL_GUITAR.segment;
+    else if(selected_channel == 1) segs = LED_CHANNEL_MIC.segment;
+    else if(selected_channel == 2) segs = LED_CHANNEL_LINE.segment;
+
+    LedDriver.Send(LED_CHANNEL_GUITAR.digit, segs); // All are on Dig2
 }
 
 void UpdateLEDs()
@@ -164,6 +181,20 @@ void AudioCallback(AudioHandle::InputBuffer in,
     }
 
     UpdateLEDs();
+
+    // Channel selection switch
+       channel_button.Debounce();
+
+    static bool last_btn = false;
+    bool btn_pressed = channel_button.Pressed();
+
+    if(!last_btn && btn_pressed)
+    {
+        selected_channel = (selected_channel + 1) % 3;
+    }
+    last_btn = btn_pressed;
+
+    UpdateChannelLEDs();
 }
 
 int main(void)
