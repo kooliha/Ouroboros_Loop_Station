@@ -31,9 +31,9 @@ constexpr LedIndicator LED_LAYER4_Selected = {2, 0x04}; // E Dig1
 constexpr LedIndicator LED_LAYER5_Selected = {2, 0x02}; // F Dig1
 
 // Channel indicators
-constexpr LedIndicator LED_CHANNEL_GUITAR = {2, 0x80}; // DP Dig2
-constexpr LedIndicator LED_CHANNEL_MIC    = {2, 0x40}; // A  Dig2
-constexpr LedIndicator LED_CHANNEL_LINE   = {2, 0x20}; // B  Dig2
+constexpr LedIndicator LED_CHANNEL_GUITAR = {3, 0x80}; // DP Dig2
+constexpr LedIndicator LED_CHANNEL_MIC    = {3, 0x40}; // A  Dig2
+constexpr LedIndicator LED_CHANNEL_LINE   = {3, 0x20}; // B  Dig2
 
 
 

@@ -10,6 +10,34 @@ using namespace daisysp;
 #define kBuffSize 1600000 // ~33 seconds at 48kHz per each layer (5 in total)
 #define kNumLayers 5
 
+// ===== PIN DEFINITIONS =====
+// SPI pins for MAX7219 LED driver
+constexpr Pin SPI_SCLK = D8;
+constexpr Pin SPI_MISO = D9;
+constexpr Pin SPI_MOSI = D10;
+constexpr Pin SPI_CS   = D7;
+
+// Control buttons
+constexpr Pin RECORD_PLAY_BTN = D17;
+constexpr Pin INPUT_SELECT_SW = D21;
+constexpr Pin CHANNEL_BTN     = D15;
+
+// Layer select buttons
+constexpr Pin LAYER1_BTN = D14;
+constexpr Pin LAYER2_BTN = D13;
+constexpr Pin LAYER3_BTN = D12;
+constexpr Pin LAYER4_BTN = D11;
+constexpr Pin LAYER5_BTN = D6;
+
+// Relay control pins
+constexpr Pin INSTRUMENTAL_RELAY = D25;
+constexpr Pin LINE_RELAY         = D26;
+
+// ADC pins for knobs
+constexpr Pin SPEED_POT  = D19;
+constexpr Pin VOLUME_POT = D20;
+constexpr Pin PAN_POT    = D22;
+
 DaisySeed hw;
 Max7219 LedDriver;
 
@@ -28,11 +56,16 @@ Switch layer5_select_button;
 
 Switch channel_button;
 
+// Relay control pins
+GPIO instrumental_relay; // D25 - controls instrumental input relay
+GPIO line_relay;         // D26 - controls line input relay
+
 // Layer selection
 int selected_layer = 0; // 0 = Layer 1, 1 = Layer 2, ..., 4 = Layer 5
 
 // Input selection
 int selected_channel = 0; // 0 = Guitar, 1 = Mic, 2 = Line
+bool channel_override_active = false; // True when user has manually changed channel
 
 void SetupHardware()
 {
@@ -49,30 +82,38 @@ void SetupHardware()
     spi_cfg.clock_phase     = SpiHandle::Config::ClockPhase::ONE_EDGE;
     spi_cfg.nss             = SpiHandle::Config::NSS::SOFT;
     spi_cfg.baud_prescaler  = SpiHandle::Config::BaudPrescaler::PS_64;
-    spi_cfg.pin_config.sclk = daisy::seed::D8;
-    spi_cfg.pin_config.miso = daisy::seed::D9;
-    spi_cfg.pin_config.mosi = daisy::seed::D10;
+    spi_cfg.pin_config.sclk = SPI_SCLK;
+    spi_cfg.pin_config.miso = SPI_MISO;
+    spi_cfg.pin_config.mosi = SPI_MOSI;
 
     static SpiHandle spi;
     spi.Init(spi_cfg);
 
-    LedDriver.Init(&spi, daisy::seed::D7);
+    LedDriver.Init(&spi, SPI_CS);
 
     // Main controls (shared)
-    record_play_button.Init(D17, 300);        // Record/Play button
-    input_select_switch.Init(D21, GPIO::Mode::INPUT, GPIO::Pull::PULLUP); // Input select switch
+    record_play_button.Init(RECORD_PLAY_BTN, 300);        // Record/Play button
+    input_select_switch.Init(INPUT_SELECT_SW, GPIO::Mode::INPUT, GPIO::Pull::PULLUP); // Input select switch
 
     // Layer select buttons
-    layer1_select_button.Init(D14, 300); // Layer 1 select button
-    layer2_select_button.Init(D13, 300); // Layer 2 select button
-    layer3_select_button.Init(D12, 300); // Layer 3 select button
-    layer4_select_button.Init(D11, 300); // Layer 4 select button
-    layer5_select_button.Init(D6, 300);  // Layer 5 select button
+    layer1_select_button.Init(LAYER1_BTN, 300); // Layer 1 select button
+    layer2_select_button.Init(LAYER2_BTN, 300); // Layer 2 select button
+    layer3_select_button.Init(LAYER3_BTN, 300); // Layer 3 select button
+    layer4_select_button.Init(LAYER4_BTN, 300); // Layer 4 select button
+    layer5_select_button.Init(LAYER5_BTN, 300); // Layer 5 select button
 
-    channel_button.Init(D15, 300); // Channel select button, fast debounce
+    channel_button.Init(CHANNEL_BTN, 300); // Channel select button, fast debounce
+
+    // Initialize relay control pins
+    instrumental_relay.Init(INSTRUMENTAL_RELAY, GPIO::Mode::OUTPUT);
+    line_relay.Init(LINE_RELAY, GPIO::Mode::OUTPUT);
+    
+    // Start with both relays OFF (LOW = off, HIGH = on for 2N3904)
+    instrumental_relay.Write(false);
+    line_relay.Write(false);
 
     // ADC pins for main controls (3 knobs)
-    daisy::Pin adc_pins[3] = {D19, D20, D22};
+    daisy::Pin adc_pins[3] = {SPEED_POT, VOLUME_POT, PAN_POT};
     AdcChannelConfig adc_cfgs[3];
     for(int i = 0; i < 3; i++)
         adc_cfgs[i].InitSingle(adc_pins[i]);
@@ -92,10 +133,13 @@ void SetupHardware()
 void UpdateChannelLEDs()
 {
     int channel_to_show;
-    if(layers[selected_layer].recorded)
-        channel_to_show = layers[selected_layer].recorded_channel;
-    else
+    
+    // If user has manually changed channel, show the selected_channel
+    // Otherwise, show the recorded channel for recorded layers
+    if(channel_override_active || !layers[selected_layer].recorded)
         channel_to_show = selected_channel;
+    else
+        channel_to_show = layers[selected_layer].recorded_channel;
 
     uint8_t segs = 0x00;
     if(channel_to_show == 0) segs = LED_CHANNEL_GUITAR.segment;
@@ -103,6 +147,30 @@ void UpdateChannelLEDs()
     else if(channel_to_show == 2) segs = LED_CHANNEL_LINE.segment;
 
     LedDriver.Send(LED_CHANNEL_GUITAR.digit, segs); // All are on Dig2
+}
+
+void UpdateRelays()
+{
+    // Control relays based on selected channel
+    // Channel 0 = Guitar (through instrumental relay), Channel 1 = Mic (through instrumental relay), Channel 2 = Line (through line relay)
+    
+    switch(selected_channel)
+    {
+        case 0: // Guitar
+            instrumental_relay.Write(true);  // Activate instrumental relay (will select left/right channel in hardware)
+            line_relay.Write(false);         // Deactivate line relay
+            break;
+            
+        case 1: // Mic  
+            instrumental_relay.Write(true);  // Activate instrumental relay (will select left/right channel in hardware)
+            line_relay.Write(false);         // Deactivate line relay
+            break;
+            
+        case 2: // Line
+            instrumental_relay.Write(false); // Deactivate instrumental relay  
+            line_relay.Write(true);          // Activate line relay
+            break;
+    }
 }
 
 void UpdateLEDs()
@@ -166,6 +234,11 @@ void AudioCallback(AudioHandle::InputBuffer in,
         if(!last_layer_btn[i] && layer_btn_pressed[i])
         {
             selected_layer = i;
+            channel_override_active = false; // Reset override when switching layers
+            // Set selected_channel to match the recorded channel (if any)
+            if(layers[selected_layer].recorded)
+                selected_channel = layers[selected_layer].recorded_channel;
+            UpdateRelays(); // Update relay state when switching layers
         }
         last_layer_btn[i] = layer_btn_pressed[i];
     }
@@ -190,7 +263,7 @@ void AudioCallback(AudioHandle::InputBuffer in,
     UpdateLEDs();
 
     // Channel selection switch
-       channel_button.Debounce();
+    channel_button.Debounce();
 
     static bool last_btn = false;
     bool btn_pressed = channel_button.Pressed();
@@ -198,6 +271,8 @@ void AudioCallback(AudioHandle::InputBuffer in,
     if(!last_btn && btn_pressed)
     {
         selected_channel = (selected_channel + 1) % 3;
+        channel_override_active = true; // User has manually changed channel
+        UpdateRelays(); // Update relay state when channel button is pressed
     }
     last_btn = btn_pressed;
 
