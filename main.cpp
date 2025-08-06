@@ -91,10 +91,16 @@ void SetupHardware()
 
 void UpdateChannelLEDs()
 {
+    int channel_to_show;
+    if(layers[selected_layer].recorded)
+        channel_to_show = layers[selected_layer].recorded_channel;
+    else
+        channel_to_show = selected_channel;
+
     uint8_t segs = 0x00;
-    if(selected_channel == 0) segs = LED_CHANNEL_GUITAR.segment;
-    else if(selected_channel == 1) segs = LED_CHANNEL_MIC.segment;
-    else if(selected_channel == 2) segs = LED_CHANNEL_LINE.segment;
+    if(channel_to_show == 0) segs = LED_CHANNEL_GUITAR.segment;
+    else if(channel_to_show == 1) segs = LED_CHANNEL_MIC.segment;
+    else if(channel_to_show == 2) segs = LED_CHANNEL_LINE.segment;
 
     LedDriver.Send(LED_CHANNEL_GUITAR.digit, segs); // All are on Dig2
 }
@@ -170,7 +176,8 @@ void AudioCallback(AudioHandle::InputBuffer in,
         in, out, size,
         &record_play_button,
         &input_select_switch,
-        &hw
+        &hw,
+        selected_channel
     );
 
     // Process playback for all non-selected layers

@@ -18,6 +18,7 @@ struct LooperLayer
     bool recording = false;
     bool recorded = false;
     bool paused = false;
+    int recorded_channel = 0;
 
     // Controls
     float speed = 1.0f;
@@ -37,7 +38,9 @@ struct LooperLayer
                  size_t size,
                  Switch* record_play_button,
                  GPIO* input_select_switch,
-                 DaisySeed* hw);
+                 DaisySeed* hw,
+                int selected_channel
+                );
 
     void ProcessPlaybackOnly(AudioHandle::InputBuffer in,
                              AudioHandle::OutputBuffer out,

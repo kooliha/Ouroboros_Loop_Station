@@ -18,7 +18,8 @@ void LooperLayer::Process(int adc_offset,
                           size_t size,
                           Switch* record_play_button,
                           GPIO* input_select_switch,
-                          DaisySeed* hw)
+                          DaisySeed* hw,
+                          int selected_channel)
 {
     record_play_button->Debounce();
 
@@ -44,6 +45,7 @@ void LooperLayer::Process(int adc_offset,
             record_len = write_idx > 0 ? write_idx : 1;
             play_pos = 0.0f;
             recorded = true;
+            recorded_channel = selected_channel;
         }
         else
         {
