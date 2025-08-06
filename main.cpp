@@ -18,7 +18,7 @@ constexpr Pin SPI_MOSI = D10;
 constexpr Pin SPI_CS   = D7;
 
 // Control buttons
-constexpr Pin RECORD_PLAY_BTN = D17;
+constexpr Pin RECORD_PLAY_BTN = D24;
 constexpr Pin CHANNEL_BTN     = D15;
 
 // Layer select buttons
@@ -32,9 +32,16 @@ constexpr Pin LAYER5_BTN = D6;
 constexpr Pin CHANNEL_SWITCH_RELAY = D25;
 
 // ADC pins for knobs
-constexpr Pin SPEED_POT  = D19;
-constexpr Pin VOLUME_POT = D20;
-constexpr Pin PAN_POT    = D22;
+constexpr Pin SPEED_POT  = D22;  // Common speed control
+constexpr Pin PAN_POT    = D23;  // Common pan control
+constexpr Pin MASTER_VOL = D21;  // Master volume for all layers
+
+// Individual volume pots per layer
+constexpr Pin VOLUME1_POT = D16; // Layer 1 volume
+constexpr Pin VOLUME2_POT = D17; // Layer 2 volume  
+constexpr Pin VOLUME3_POT = D18; // Layer 3 volume
+constexpr Pin VOLUME4_POT = D19; // Layer 4 volume
+constexpr Pin VOLUME5_POT = D20; // Layer 5 volume
 
 DaisySeed hw;
 Max7219 LedDriver;
@@ -105,12 +112,12 @@ void SetupHardware()
     // Start with relay OFF (Guitar/Mic input)
     channel_switch_relay.Write(false);
 
-    // ADC pins for main controls (3 knobs)
-    daisy::Pin adc_pins[3] = {SPEED_POT, VOLUME_POT, PAN_POT};
-    AdcChannelConfig adc_cfgs[3];
-    for(int i = 0; i < 3; i++)
+    // ADC pins: 3 common controls + 5 individual volume controls = 8 total
+    daisy::Pin adc_pins[8] = {SPEED_POT, PAN_POT, MASTER_VOL, VOLUME1_POT, VOLUME2_POT, VOLUME3_POT, VOLUME4_POT, VOLUME5_POT};
+    AdcChannelConfig adc_cfgs[8];
+    for(int i = 0; i < 8; i++)
         adc_cfgs[i].InitSingle(adc_pins[i]);
-    hw.adc.Init(adc_cfgs, 3);
+    hw.adc.Init(adc_cfgs, 8);
     hw.adc.Start();
 
     // Layer buffers
@@ -229,7 +236,7 @@ void AudioCallback(AudioHandle::InputBuffer in,
 
     // Process main controls for selected layer
     layers[selected_layer].Process(
-        0, // ADC offset is 0, since only 3 ADCs
+        selected_layer, // ADC offset: layer 0 uses volume at index 2, layer 1 at index 3, etc.
         in, out, size,
         &record_play_button,
         &hw,
@@ -240,7 +247,7 @@ void AudioCallback(AudioHandle::InputBuffer in,
     for(int i = 0; i < kNumLayers; i++)
     {
         if(i != selected_layer)
-            layers[i].ProcessPlaybackOnly(in, out, size, &hw);
+            layers[i].ProcessPlaybackOnly(in, out, size, &hw, i); // Pass layer index for volume
     }
 
     UpdateLEDs();

@@ -77,9 +77,11 @@ void LooperLayer::Process(int adc_offset,
     was_pressed = pressed;
 
     // --- Read pots for this layer ---
-    float speed_pot = hw->adc.GetFloat(adc_offset + 0);
-    float vol_pot   = hw->adc.GetFloat(adc_offset + 1);
-    float pan_pot   = hw->adc.GetFloat(adc_offset + 2);
+    // ADC layout: [0]=SPEED_POT, [1]=PAN_POT, [2]=MASTER_VOL, [3]=VOLUME1_POT, [4]=VOLUME2_POT, [5]=VOLUME3_POT, [6]=VOLUME4_POT, [7]=VOLUME5_POT
+    float speed_pot = hw->adc.GetFloat(0);              // Common speed control
+    float pan_pot   = hw->adc.GetFloat(1);              // Common pan control  
+    float master_vol = hw->adc.GetFloat(2);             // Master volume for all layers
+    float vol_pot   = hw->adc.GetFloat(3 + adc_offset); // Individual volume per layer
 
     // Speed logic
     const float center = 0.5f;
@@ -99,11 +101,17 @@ void LooperLayer::Process(int adc_offset,
         speed = 1.0f;
     }
 
-    volume = powf(vol_pot, 2.5f) * 3.0f;
+    volume = powf(vol_pot, 2.5f) * 1.4f;  // Individual volume: 0.0 to 1.4x
     if(volume < 0.0f) volume = 0.0f;
+    
     pan = pan_pot;
     float panL = 1.0f - pan;
     float panR = pan;
+    
+    // Read master volume as a coefficient (0.0 to 1.43x)
+    // Combined max: 1.4 * 1.43 ≈ 2.0x
+    float master_volume = powf(master_vol, 2.5f) * 1.43f;
+    if(master_volume < 0.0f) master_volume = 0.0f;
 
     // --- Input selection based on selected channel ---
     // Channel 0 = Guitar (Right input), Channel 1 = Mic (Left input), Channel 2 = Line (Both inputs)
@@ -138,18 +146,18 @@ void LooperLayer::Process(int adc_offset,
             // Pass through during recording
             if(selected_channel == 0) // Guitar
             {
-                out[0][i] += guitar_in * volume;
-                out[1][i] += guitar_in * volume;
+                out[0][i] += guitar_in * volume * master_volume;
+                out[1][i] += guitar_in * volume * master_volume;
             }
             else if(selected_channel == 1) // Mic
             {
-                out[0][i] += mic_in * volume;
-                out[1][i] += mic_in * volume;
+                out[0][i] += mic_in * volume * master_volume;
+                out[1][i] += mic_in * volume * master_volume;
             }
             else if(selected_channel == 2) // Line
             {
-                out[0][i] += mic_in * volume;
-                out[1][i] += guitar_in * volume;
+                out[0][i] += mic_in * volume * master_volume;
+                out[1][i] += guitar_in * volume * master_volume;
             }
         }
         else if(recorded && record_len > 0 && !paused)
@@ -158,8 +166,8 @@ void LooperLayer::Process(int adc_offset,
             int idx1 = (idx0 + 1) % record_len;
             float frac = play_pos - idx0;
 
-            out[0][i] += (buffer_l[idx0] * (1.0f - frac) + buffer_l[idx1] * frac) * volume * panL;
-            out[1][i] += (buffer_r[idx0] * (1.0f - frac) + buffer_r[idx1] * frac) * volume * panR;
+            out[0][i] += (buffer_l[idx0] * (1.0f - frac) + buffer_l[idx1] * frac) * volume * master_volume * panL;
+            out[1][i] += (buffer_r[idx0] * (1.0f - frac) + buffer_r[idx1] * frac) * volume * master_volume * panR;
 
             play_pos += speed;
             while(play_pos >= record_len) play_pos -= record_len;
@@ -175,11 +183,24 @@ void LooperLayer::Process(int adc_offset,
 void LooperLayer::ProcessPlaybackOnly(AudioHandle::InputBuffer in,
                                       AudioHandle::OutputBuffer out,
                                       size_t size,
-                                      DaisySeed* hw)
+                                      DaisySeed* hw,
+                                      int layer_index)
 {
     // Only playback, no controls
     if(recorded && record_len > 0 && !paused)
     {
+        // Read individual volume for this layer + master volume
+        // ADC layout: [0]=SPEED_POT, [1]=PAN_POT, [2]=MASTER_VOL, [3]=VOLUME1_POT, [4]=VOLUME2_POT, [5]=VOLUME3_POT, [6]=VOLUME4_POT, [7]=VOLUME5_POT
+        float master_vol = hw->adc.GetFloat(2);             // Master volume for all layers
+        float vol_pot = hw->adc.GetFloat(3 + layer_index);  // Individual volume per layer
+        
+        float master_volume = powf(master_vol, 2.5f) * 1.43f;  // Master: 0.0 to 1.43x
+        if(master_volume < 0.0f) master_volume = 0.0f;
+        
+        float layer_volume = powf(vol_pot, 2.5f) * 1.4f;      // Individual: 0.0 to 1.4x  
+        if(layer_volume < 0.0f) layer_volume = 0.0f;
+        // Combined maximum: 1.4 * 1.43 ≈ 2.0x
+        
         float panL = 1.0f - pan;
         float panR = pan;
         for(size_t i = 0; i < size; i++)
@@ -188,8 +209,8 @@ void LooperLayer::ProcessPlaybackOnly(AudioHandle::InputBuffer in,
             int idx1 = (idx0 + 1) % record_len;
             float frac = play_pos - idx0;
 
-            out[0][i] += (buffer_l[idx0] * (1.0f - frac) + buffer_l[idx1] * frac) * volume * panL;
-            out[1][i] += (buffer_r[idx0] * (1.0f - frac) + buffer_r[idx1] * frac) * volume * panR;
+            out[0][i] += (buffer_l[idx0] * (1.0f - frac) + buffer_l[idx1] * frac) * layer_volume * master_volume * panL;
+            out[1][i] += (buffer_r[idx0] * (1.0f - frac) + buffer_r[idx1] * frac) * layer_volume * master_volume * panR;
 
             play_pos += speed;
             while(play_pos >= record_len) play_pos -= record_len;

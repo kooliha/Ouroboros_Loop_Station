@@ -44,5 +44,6 @@ struct LooperLayer
     void ProcessPlaybackOnly(AudioHandle::InputBuffer in,
                              AudioHandle::OutputBuffer out,
                              size_t size,
-                             DaisySeed* hw);
+                             DaisySeed* hw,
+                             int layer_index);
 };
