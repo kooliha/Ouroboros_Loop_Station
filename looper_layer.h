@@ -38,7 +38,9 @@ struct LooperLayer
                  size_t size,
                  Switch* record_play_button,
                  DaisySeed* hw,
-                 int selected_channel
+                 int selected_channel,
+                 bool allow_speed_control = false,
+                 bool allow_pan_control = false
                 );
 
     void ProcessPlaybackOnly(AudioHandle::InputBuffer in,

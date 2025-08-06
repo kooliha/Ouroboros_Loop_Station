@@ -18,63 +18,70 @@ void LooperLayer::Process(int adc_offset,
                           size_t size,
                           Switch* record_play_button,
                           DaisySeed* hw,
-                          int selected_channel)
+                          int selected_channel,
+                          bool allow_speed_control,
+                          bool allow_pan_control)
 {
-    record_play_button->Debounce();
-
-    static bool was_pressed = false;
-    bool pressed = record_play_button->Pressed();
-
-    // Start recording on long press
-    if(record_play_button->TimeHeldMs() > 400 && pressed && !recording)
+    // Only process record button if provided (for selected layer)
+    if(record_play_button != nullptr)
     {
-        recording = true;
-        write_idx = 0;
-        recorded = false;
-        paused = false;
-        click_count = 0;
-    }
+        record_play_button->Debounce();
 
-    // On release
-    if(was_pressed && !pressed)
-    {
-        if(recording)
+        static bool was_pressed = false;
+        bool pressed = record_play_button->Pressed();
+
+        // Start recording on long press
+        if(record_play_button->TimeHeldMs() > 400 && pressed && !recording)
         {
-            recording = false;
-            record_len = write_idx > 0 ? write_idx : 1;
-            play_pos = 0.0f;
-            recorded = true;
-            recorded_channel = selected_channel;
+            recording = true;
+            write_idx = 0;
+            recorded = false;
+            paused = false;
+            click_count = 0;
+            speed = 1.0f; // Always start recording at normal speed
         }
-        else
+
+        // On release
+        if(was_pressed && !pressed)
         {
-            uint32_t now = System::GetNow();
-            if(now - last_release < double_click_time)
+            if(recording)
             {
-                click_count++;
+                recording = false;
+                record_len = write_idx > 0 ? write_idx : 1;
+                play_pos = 0.0f;
+                recorded = true;
+                recorded_channel = selected_channel;
             }
             else
             {
-                click_count = 1;
-            }
-            last_release = now;
+                uint32_t now = System::GetNow();
+                if(now - last_release < double_click_time)
+                {
+                    click_count++;
+                }
+                else
+                {
+                    click_count = 1;
+                }
+                last_release = now;
 
-            if(click_count == 2)
-            {
-                recorded = false;
-                record_len = 0;
-                play_pos = 0.0f;
-                click_count = 0;
-                paused = false;
-            }
-            else if(click_count == 1)
-            {
-                if(recorded)
-                    paused = !paused;
+                if(click_count == 2)
+                {
+                    recorded = false;
+                    record_len = 0;
+                    play_pos = 0.0f;
+                    click_count = 0;
+                    paused = false;
+                }
+                else if(click_count == 1)
+                {
+                    if(recorded)
+                        paused = !paused;
+                }
             }
         }
+        was_pressed = pressed;
     }
-    was_pressed = pressed;
 
     // --- Read pots for this layer ---
     // ADC layout: [0]=SPEED_POT, [1]=PAN_POT, [2]=MASTER_VOL, [3]=VOLUME1_POT, [4]=VOLUME2_POT, [5]=VOLUME3_POT, [6]=VOLUME4_POT, [7]=VOLUME5_POT
@@ -83,28 +90,38 @@ void LooperLayer::Process(int adc_offset,
     float master_vol = hw->adc.GetFloat(2);             // Master volume for all layers
     float vol_pot   = hw->adc.GetFloat(3 + adc_offset); // Individual volume per layer
 
-    // Speed logic
-    const float center = 0.5f;
-    const float dead_zone = 0.09f;
-    if(speed_pot < center - dead_zone)
+    // Speed logic - only allow speed changes when explicitly enabled (hold layer button + turn speed knob)
+    if(!recording && recorded && allow_speed_control)
     {
-        float tt = (speed_pot - 0.0f) / (center - dead_zone);
-        speed = 0.3f + tt * (1.0f - 0.3f);
+        const float center = 0.5f;
+        const float dead_zone = 0.09f;
+        if(speed_pot < center - dead_zone)
+        {
+            float tt = (speed_pot - 0.0f) / (center - dead_zone);
+            speed = 0.3f + tt * (1.0f - 0.3f);
+        }
+        else if(speed_pot > center + dead_zone)
+        {
+            float tt = (speed_pot - (center + dead_zone)) / (1.0f - (center + dead_zone));
+            speed = 1.0f + tt * (2.0f - 1.0f);
+        }
+        else
+        {
+            speed = 1.0f;
+        }
     }
-    else if(speed_pot > center + dead_zone)
+    // During recording or when speed control is not enabled, speed is locked
+
+    // Pan logic - only allow pan changes when explicitly enabled (hold layer button + turn pan knob)
+    if(!recording && recorded && allow_pan_control)
     {
-        float tt = (speed_pot - (center + dead_zone)) / (1.0f - (center + dead_zone));
-        speed = 1.0f + tt * (2.0f - 1.0f);
+        pan = pan_pot; // Read pan from knob when control is enabled
     }
-    else
-    {
-        speed = 1.0f;
-    }
+    // During recording or when pan control is not enabled, pan is locked at previous value
 
     volume = powf(vol_pot, 2.5f) * 1.4f;  // Individual volume: 0.0 to 1.4x
     if(volume < 0.0f) volume = 0.0f;
     
-    pan = pan_pot;
     float panL = 1.0f - pan;
     float panR = pan;
     

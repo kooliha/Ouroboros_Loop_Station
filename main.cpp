@@ -220,9 +220,26 @@ void AudioCallback(AudioHandle::InputBuffer in,
         layer5_select_button.Pressed()
     };
 
+    // Check for layer button hold + speed/pan knob interaction
+    int speed_controlled_layer = -1; // Which layer is having its speed controlled
+    int pan_controlled_layer = -1;   // Which layer is having its pan controlled
     for(int i = 0; i < kNumLayers; i++)
     {
-        if(!last_layer_btn[i] && layer_btn_pressed[i])
+        // If button is held for more than 200ms, allow speed/pan control for this layer
+        Switch* buttons[5] = {&layer1_select_button, &layer2_select_button, &layer3_select_button, &layer4_select_button, &layer5_select_button};
+        if(buttons[i]->Pressed() && buttons[i]->TimeHeldMs() > 200)
+        {
+            speed_controlled_layer = i;
+            pan_controlled_layer = i;
+            break; // Only one layer can be speed/pan-controlled at a time
+        }
+    }
+
+    // Handle layer selection (only on button press, not during speed control)
+    for(int i = 0; i < kNumLayers; i++)
+    {
+        // Only switch layers on button press (not hold for speed/pan control)
+        if(!last_layer_btn[i] && layer_btn_pressed[i] && speed_controlled_layer == -1 && pan_controlled_layer == -1)
         {
             selected_layer = i;
             channel_override_active = false; // Reset override when switching layers
@@ -240,14 +257,38 @@ void AudioCallback(AudioHandle::InputBuffer in,
         in, out, size,
         &record_play_button,
         &hw,
-        selected_channel
+        selected_channel,
+        (speed_controlled_layer == selected_layer), // Allow speed control if this layer's button is held
+        (pan_controlled_layer == selected_layer)    // Allow pan control if this layer's button is held
     );
 
-    // Process playback for all non-selected layers
+    // Process playback for all non-selected layers (including speed/pan control if button held)
     for(int i = 0; i < kNumLayers; i++)
     {
         if(i != selected_layer)
-            layers[i].ProcessPlaybackOnly(in, out, size, &hw, i); // Pass layer index for volume
+        {
+            // For non-selected layers, check if their speed or pan should be controlled
+            bool allow_speed_for_this_layer = (speed_controlled_layer == i);
+            bool allow_pan_for_this_layer = (pan_controlled_layer == i);
+            if(allow_speed_for_this_layer || allow_pan_for_this_layer)
+            {
+                // Process with speed/pan control enabled for this layer
+                layers[i].Process(
+                    i, // ADC offset for this layer's volume
+                    in, out, size,
+                    nullptr, // No record button for non-selected layers
+                    &hw,
+                    layers[i].recorded_channel, // Use the channel this layer was recorded with
+                    allow_speed_for_this_layer, // Allow speed control
+                    allow_pan_for_this_layer    // Allow pan control
+                );
+            }
+            else
+            {
+                // Normal playback only
+                layers[i].ProcessPlaybackOnly(in, out, size, &hw, i);
+            }
+        }
     }
 
     UpdateLEDs();
