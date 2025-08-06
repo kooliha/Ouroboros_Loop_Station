@@ -37,9 +37,8 @@ struct LooperLayer
                  AudioHandle::OutputBuffer out,
                  size_t size,
                  Switch* record_play_button,
-                 GPIO* input_select_switch,
                  DaisySeed* hw,
-                int selected_channel
+                 int selected_channel
                 );
 
     void ProcessPlaybackOnly(AudioHandle::InputBuffer in,

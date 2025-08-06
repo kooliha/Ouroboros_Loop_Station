@@ -19,7 +19,6 @@ constexpr Pin SPI_CS   = D7;
 
 // Control buttons
 constexpr Pin RECORD_PLAY_BTN = D17;
-constexpr Pin INPUT_SELECT_SW = D21;
 constexpr Pin CHANNEL_BTN     = D15;
 
 // Layer select buttons
@@ -29,9 +28,8 @@ constexpr Pin LAYER3_BTN = D12;
 constexpr Pin LAYER4_BTN = D11;
 constexpr Pin LAYER5_BTN = D6;
 
-// Relay control pins
-constexpr Pin INSTRUMENTAL_RELAY = D25;
-constexpr Pin LINE_RELAY         = D26;
+// Channel switch relay pin
+constexpr Pin CHANNEL_SWITCH_RELAY = D25;
 
 // ADC pins for knobs
 constexpr Pin SPEED_POT  = D19;
@@ -47,7 +45,6 @@ float DSY_SDRAM_BSS buffer_r[kNumLayers][kBuffSize];
 LooperLayer layers[kNumLayers];
 
 Switch record_play_button;
-GPIO input_select_switch;
 Switch layer1_select_button;
 Switch layer2_select_button;
 Switch layer3_select_button;
@@ -56,9 +53,8 @@ Switch layer5_select_button;
 
 Switch channel_button;
 
-// Relay control pins
-GPIO instrumental_relay; // D25 - controls instrumental input relay
-GPIO line_relay;         // D26 - controls line input relay
+// Channel switch relay
+GPIO channel_switch_relay; // D25 - OFF = Guitar/Mic, ON = Line input
 
 // Layer selection
 int selected_layer = 0; // 0 = Layer 1, 1 = Layer 2, ..., 4 = Layer 5
@@ -93,7 +89,6 @@ void SetupHardware()
 
     // Main controls (shared)
     record_play_button.Init(RECORD_PLAY_BTN, 300);        // Record/Play button
-    input_select_switch.Init(INPUT_SELECT_SW, GPIO::Mode::INPUT, GPIO::Pull::PULLUP); // Input select switch
 
     // Layer select buttons
     layer1_select_button.Init(LAYER1_BTN, 300); // Layer 1 select button
@@ -104,13 +99,11 @@ void SetupHardware()
 
     channel_button.Init(CHANNEL_BTN, 300); // Channel select button, fast debounce
 
-    // Initialize relay control pins
-    instrumental_relay.Init(INSTRUMENTAL_RELAY, GPIO::Mode::OUTPUT);
-    line_relay.Init(LINE_RELAY, GPIO::Mode::OUTPUT);
+    // Initialize channel switch relay
+    channel_switch_relay.Init(CHANNEL_SWITCH_RELAY, GPIO::Mode::OUTPUT);
     
-    // Start with both relays OFF (LOW = off, HIGH = on for 2N3904)
-    instrumental_relay.Write(false);
-    line_relay.Write(false);
+    // Start with relay OFF (Guitar/Mic input)
+    channel_switch_relay.Write(false);
 
     // ADC pins for main controls (3 knobs)
     daisy::Pin adc_pins[3] = {SPEED_POT, VOLUME_POT, PAN_POT};
@@ -151,25 +144,16 @@ void UpdateChannelLEDs()
 
 void UpdateRelays()
 {
-    // Control relays based on selected channel
-    // Channel 0 = Guitar (through instrumental relay), Channel 1 = Mic (through instrumental relay), Channel 2 = Line (through line relay)
+    // Control channel switch relay based on selected channel
+    // Channel 0 = Guitar, Channel 1 = Mic (both relay OFF), Channel 2 = Line (relay ON)
     
-    switch(selected_channel)
+    if(selected_channel == 2) // Line input
     {
-        case 0: // Guitar
-            instrumental_relay.Write(true);  // Activate instrumental relay (will select left/right channel in hardware)
-            line_relay.Write(false);         // Deactivate line relay
-            break;
-            
-        case 1: // Mic  
-            instrumental_relay.Write(true);  // Activate instrumental relay (will select left/right channel in hardware)
-            line_relay.Write(false);         // Deactivate line relay
-            break;
-            
-        case 2: // Line
-            instrumental_relay.Write(false); // Deactivate instrumental relay  
-            line_relay.Write(true);          // Activate line relay
-            break;
+        channel_switch_relay.Write(true);   // Activate relay for line input
+    }
+    else // Guitar or Mic input
+    {
+        channel_switch_relay.Write(false);  // Deactivate relay for guitar/mic input
     }
 }
 
@@ -248,7 +232,6 @@ void AudioCallback(AudioHandle::InputBuffer in,
         0, // ADC offset is 0, since only 3 ADCs
         in, out, size,
         &record_play_button,
-        &input_select_switch,
         &hw,
         selected_channel
     );

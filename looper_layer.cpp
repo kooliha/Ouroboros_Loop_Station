@@ -17,7 +17,6 @@ void LooperLayer::Process(int adc_offset,
                           AudioHandle::OutputBuffer out,
                           size_t size,
                           Switch* record_play_button,
-                          GPIO* input_select_switch,
                           DaisySeed* hw,
                           int selected_channel)
 {
@@ -106,25 +105,52 @@ void LooperLayer::Process(int adc_offset,
     float panL = 1.0f - pan;
     float panR = pan;
 
-    // --- Input selection ---
-    bool input_selection = (input_select_switch->Read() == 0); // LOW = mic, HIGH = guitar
+    // --- Input selection based on selected channel ---
+    // Channel 0 = Guitar (Right input), Channel 1 = Mic (Left input), Channel 2 = Line (Both inputs)
 
     for(size_t i = 0; i < size; i++)
     {
-        float mic_in = in[0][i];
-        float guitar_in = in[1][i];
-        float selected_input = input_selection ? mic_in : guitar_in;
-
+        float mic_in = in[0][i];      // Left input
+        float guitar_in = in[1][i];   // Right input
+        
         if(recording)
         {
             if(write_idx < buffer_size)
             {
-                buffer_l[write_idx] = selected_input;
-                buffer_r[write_idx] = selected_input;
+                if(selected_channel == 0) // Guitar - record from right input
+                {
+                    buffer_l[write_idx] = guitar_in;
+                    buffer_r[write_idx] = guitar_in;
+                }
+                else if(selected_channel == 1) // Mic - record from left input
+                {
+                    buffer_l[write_idx] = mic_in;
+                    buffer_r[write_idx] = mic_in;
+                }
+                else if(selected_channel == 2) // Line - record from both inputs (true stereo)
+                {
+                    buffer_l[write_idx] = mic_in;   // Left to left
+                    buffer_r[write_idx] = guitar_in; // Right to right
+                }
                 write_idx++;
             }
-            out[0][i] += selected_input * volume;
-            out[1][i] += selected_input * volume;
+            
+            // Pass through during recording
+            if(selected_channel == 0) // Guitar
+            {
+                out[0][i] += guitar_in * volume;
+                out[1][i] += guitar_in * volume;
+            }
+            else if(selected_channel == 1) // Mic
+            {
+                out[0][i] += mic_in * volume;
+                out[1][i] += mic_in * volume;
+            }
+            else if(selected_channel == 2) // Line
+            {
+                out[0][i] += mic_in * volume;
+                out[1][i] += guitar_in * volume;
+            }
         }
         else if(recorded && record_len > 0 && !paused)
         {
