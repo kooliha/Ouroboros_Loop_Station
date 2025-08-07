@@ -29,6 +29,12 @@ Built on the Electrosmith Daisy Seed platform, it offers real-time looping with 
 - **Through-hole components** only — easy to solder and mod
 - **DIY-friendly design**
 
+### Schematic & PCB Files
+
+- **Schematic**: [PDF](Hardware/Schematic/Schematic_Ouroboros-Loop-Station-rev.0.7_2025-08-07.pdf) | [EasyEDA JSON](Hardware/Schematic/SCH_Ouroboros-Loop-Station-rev.0.7_2025-08-07.json)
+- **PCB**: Work in progress
+- **BOM**: Coming soon
+
 
 ## How to Use
 
