@@ -8,8 +8,7 @@ Built on the Electrosmith Daisy Seed platform, it offers real-time looping with 
 
 
 
-![Ouroboros Loop Station](docs/Box Design.png)
-
+![Ouroboros Loop Station](docs/Box%20Design.png)
 
 
 
@@ -38,7 +37,7 @@ Built on the Electrosmith Daisy Seed platform, it offers real-time looping with 
 
 ### Schematic & PCB Files
 
-- **Schematic**: [PDF](Hardware/Schematic/Schematic_Ouroboros-Loop-Station-rev.0.7_2025-08-07.pdf) | [EasyEDA JSON](Hardware/Schematic/SCH_Ouroboros-Loop-Station-rev.0.7_2025-08-07.json)
+- **Schematic**: [PDF](Hardware/Schematic/Schematic_Ouroboros-Loop-Station-rev.0.7_2025-08-18.pdf)
 - **PCB**: Work in progress
 - **BOM**: Coming soon
 
