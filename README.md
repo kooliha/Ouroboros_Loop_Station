@@ -37,9 +37,18 @@ Built on the Electrosmith Daisy Seed platform, it offers real-time looping with 
 
 ### Schematic & PCB Files
 
-- **Schematic**: [PDF](Hardware/Schematic/Schematic_Ouroboros-Loop-Station-rev.0.7_2025-08-18.pdf)
-- **PCB**: Work in progress
+
+- **Schematic**: [PDF](Hardware/Schematic/Schematic_Ouroboros-Loop-Station-rev.1.0.pdf)
+- **PCB**: First revision is ready. I have ordered first prototype. Once I test it - I will make it public
 - **BOM**: Coming soon
+
+### PCB Design
+
+**Front Side:**
+![PCB Front](Hardware/PCB/Front.png)
+
+**Back Side:**
+![PCB Back](Hardware/PCB/Back.png)
 
 
 ## How to Use
