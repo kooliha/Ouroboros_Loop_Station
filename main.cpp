@@ -31,10 +31,14 @@ constexpr Pin LAYER5_BTN = D6;
 // Channel switch relay pin
 constexpr Pin CHANNEL_SWITCH_RELAY = D25;
 
+// Bypass relay and button pins
+constexpr Pin BYPASS_RELAY = D26; // Analog bypass relay (OFF = only loop, ON = loop + wet signal)
+constexpr Pin BYPASS_BTN   = D27; // Push button to toggle bypass
+
 // ADC pins for knobs
 constexpr Pin SPEED_POT  = D22;  // Common speed control
-constexpr Pin PAN_POT    = D23;  // Common pan control
-constexpr Pin MASTER_VOL = D21;  // Master volume for all layers
+constexpr Pin PAN_POT    = D21;  // Common pan control (updated for PCB)
+constexpr Pin MASTER_VOL = D23;  // Master volume for all layers (updated for PCB)
 
 // Individual volume pots per layer
 constexpr Pin VOLUME1_POT = D16; // Layer 1 volume
@@ -60,8 +64,14 @@ Switch layer5_select_button;
 
 Switch channel_button;
 
+// Bypass control
+Switch bypass_button;
+
 // Channel switch relay
-GPIO channel_switch_relay; // D25 - OFF = Guitar/Mic, ON = Line input
+GPIO channel_switch_relay; // D25 - HARDWARE FIX: Inverted logic - ON = Guitar/Mic, OFF = Line input
+
+// Bypass relay
+GPIO bypass_relay; // D26 - OFF = only loop, ON = loop + wet signal from input
 
 // Layer selection
 int selected_layer = 0; // 0 = Layer 1, 1 = Layer 2, ..., 4 = Layer 5
@@ -69,6 +79,9 @@ int selected_layer = 0; // 0 = Layer 1, 1 = Layer 2, ..., 4 = Layer 5
 // Input selection
 int selected_channel = 0; // 0 = Guitar, 1 = Mic, 2 = Line
 bool channel_override_active = false; // True when user has manually changed channel
+
+// Bypass state
+bool bypass_active = false; // False = only loop, True = loop + wet signal
 
 void SetupHardware()
 {
@@ -105,12 +118,19 @@ void SetupHardware()
     layer5_select_button.Init(LAYER5_BTN, 300); // Layer 5 select button
 
     channel_button.Init(CHANNEL_BTN, 300); // Channel select button, fast debounce
+    bypass_button.Init(BYPASS_BTN, 300);   // Bypass toggle button
 
     // Initialize channel switch relay
     channel_switch_relay.Init(CHANNEL_SWITCH_RELAY, GPIO::Mode::OUTPUT);
     
-    // Start with relay OFF (Guitar/Mic input)
-    channel_switch_relay.Write(false);
+    // HARDWARE FIX: Start with relay ON (inverted logic - this gives Guitar/Mic input)
+    channel_switch_relay.Write(true);
+
+    // Initialize bypass relay
+    bypass_relay.Init(BYPASS_RELAY, GPIO::Mode::OUTPUT);
+    
+    // Start with bypass OFF (only loop output, no wet signal from input)
+    bypass_relay.Write(false);
 
     // ADC pins: 3 common controls + 5 individual volume controls = 8 total
     daisy::Pin adc_pins[8] = {SPEED_POT, PAN_POT, MASTER_VOL, VOLUME1_POT, VOLUME2_POT, VOLUME3_POT, VOLUME4_POT, VOLUME5_POT};
@@ -152,15 +172,15 @@ void UpdateChannelLEDs()
 void UpdateRelays()
 {
     // Control channel switch relay based on selected channel
-    // Channel 0 = Guitar, Channel 1 = Mic (both relay OFF), Channel 2 = Line (relay ON)
+    // HARDWARE FIX: PCB relay logic is inverted - Channel 0/1 = Guitar/Mic (relay ON), Channel 2 = Line (relay OFF)
     
     if(selected_channel == 2) // Line input
     {
-        channel_switch_relay.Write(true);   // Activate relay for line input
+        channel_switch_relay.Write(false);  // Deactivate relay for line input (inverted logic)
     }
     else // Guitar or Mic input
     {
-        channel_switch_relay.Write(false);  // Deactivate relay for guitar/mic input
+        channel_switch_relay.Write(true);   // Activate relay for guitar/mic input (inverted logic)
     }
 }
 
@@ -296,16 +316,29 @@ void AudioCallback(AudioHandle::InputBuffer in,
     // Channel selection switch
     channel_button.Debounce();
 
-    static bool last_btn = false;
-    bool btn_pressed = channel_button.Pressed();
+    static bool last_channel_btn = false;
+    bool channel_btn_pressed = channel_button.Pressed();
 
-    if(!last_btn && btn_pressed)
+    if(!last_channel_btn && channel_btn_pressed)
     {
         selected_channel = (selected_channel + 1) % 3;
         channel_override_active = true; // User has manually changed channel
         UpdateRelays(); // Update relay state when channel button is pressed
     }
-    last_btn = btn_pressed;
+    last_channel_btn = channel_btn_pressed;
+
+    // Bypass toggle switch
+    bypass_button.Debounce();
+    
+    static bool last_bypass_btn = false;
+    bool bypass_btn_pressed = bypass_button.Pressed();
+    
+    if(!last_bypass_btn && bypass_btn_pressed)
+    {
+        bypass_active = !bypass_active; // Toggle bypass state
+        bypass_relay.Write(bypass_active); // Update relay (OFF = only loop, ON = loop + wet signal)
+    }
+    last_bypass_btn = bypass_btn_pressed;
 
     UpdateChannelLEDs();
 }

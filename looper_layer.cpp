@@ -85,10 +85,11 @@ void LooperLayer::Process(int adc_offset,
 
     // --- Read pots for this layer ---
     // ADC layout: [0]=SPEED_POT, [1]=PAN_POT, [2]=MASTER_VOL, [3]=VOLUME1_POT, [4]=VOLUME2_POT, [5]=VOLUME3_POT, [6]=VOLUME4_POT, [7]=VOLUME5_POT
-    float speed_pot = hw->adc.GetFloat(0);              // Common speed control
-    float pan_pot   = hw->adc.GetFloat(1);              // Common pan control  
-    float master_vol = hw->adc.GetFloat(2);             // Master volume for all layers
-    float vol_pot   = hw->adc.GetFloat(3 + adc_offset); // Individual volume per layer
+    // HARDWARE FIX: Potentiometers are wired backwards (3V3 and GND swapped), so invert readings
+    float speed_pot = 1.0f - hw->adc.GetFloat(0);              // Common speed control (inverted)
+    float pan_pot   = 1.0f - hw->adc.GetFloat(1);              // Common pan control (inverted)
+    float master_vol = 1.0f - hw->adc.GetFloat(2);             // Master volume for all layers (inverted)
+    float vol_pot   = 1.0f - hw->adc.GetFloat(3 + adc_offset); // Individual volume per layer (inverted)
 
     // Speed logic - only allow speed changes when explicitly enabled (hold layer button + turn speed knob)
     if(!recording && recorded && allow_speed_control)
@@ -208,8 +209,9 @@ void LooperLayer::ProcessPlaybackOnly(AudioHandle::InputBuffer in,
     {
         // Read individual volume for this layer + master volume
         // ADC layout: [0]=SPEED_POT, [1]=PAN_POT, [2]=MASTER_VOL, [3]=VOLUME1_POT, [4]=VOLUME2_POT, [5]=VOLUME3_POT, [6]=VOLUME4_POT, [7]=VOLUME5_POT
-        float master_vol = hw->adc.GetFloat(2);             // Master volume for all layers
-        float vol_pot = hw->adc.GetFloat(3 + layer_index);  // Individual volume per layer
+        // HARDWARE FIX: Potentiometers are wired backwards (3V3 and GND swapped), so invert readings
+        float master_vol = 1.0f - hw->adc.GetFloat(2);             // Master volume for all layers (inverted)
+        float vol_pot = 1.0f - hw->adc.GetFloat(3 + layer_index);  // Individual volume per layer (inverted)
         
         float master_volume = powf(master_vol, 2.5f) * 1.43f;  // Master: 0.0 to 1.43x
         if(master_volume < 0.0f) master_volume = 0.0f;
