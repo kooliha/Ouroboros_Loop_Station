@@ -35,6 +35,9 @@ constexpr LedIndicator LED_CHANNEL_GUITAR = {3, 0x80}; // DP Dig2
 constexpr LedIndicator LED_CHANNEL_MIC    = {3, 0x40}; // A  Dig2
 constexpr LedIndicator LED_CHANNEL_LINE   = {3, 0x20}; // B  Dig2
 
+// Bypass indicator
+constexpr LedIndicator LED_BYPASS         = {3, 0x10}; // C  Dig2
+
 
 
 struct Max7219
@@ -50,7 +53,7 @@ struct Max7219
 
         // MAX7219 init sequence
         Send(0x09, 0x00); // Decode mode: none
-        Send(0x0A, 0x03); // Intensity: 3
+        Send(0x0A, 0x00); // Intensity: 0 (minimum brightness)
         Send(0x0B, 0x07); // Scan limit: all digits
         Send(0x0C, 0x01); // Normal operation
         Send(0x0F, 0x00); // Display test: off

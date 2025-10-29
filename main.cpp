@@ -68,20 +68,20 @@ Switch channel_button;
 Switch bypass_button;
 
 // Channel switch relay
-GPIO channel_switch_relay; // D25 - HARDWARE FIX: Inverted logic - ON = Guitar/Mic, OFF = Line input
+GPIO channel_switch_relay; // D25 - ON = Mic/Guitar, OFF = Line input
 
 // Bypass relay
-GPIO bypass_relay; // D26 - OFF = only loop, ON = loop + wet signal from input
+GPIO bypass_relay; // D26 - Write(false) = bypass active, Write(true) = bypass off
 
 // Layer selection
 int selected_layer = 0; // 0 = Layer 1, 1 = Layer 2, ..., 4 = Layer 5
 
 // Input selection
-int selected_channel = 0; // 0 = Guitar, 1 = Mic, 2 = Line
+int selected_channel = 0; // Default: 1 = Guitar, then 0 = Mic, 2 = Line
 bool channel_override_active = false; // True when user has manually changed channel
 
 // Bypass state
-bool bypass_active = false; // False = only loop, True = loop + wet signal
+bool bypass_active = true; // True = loop + wet signal, False = only loop
 
 void SetupHardware()
 {
@@ -123,13 +123,13 @@ void SetupHardware()
     // Initialize channel switch relay
     channel_switch_relay.Init(CHANNEL_SWITCH_RELAY, GPIO::Mode::OUTPUT);
     
-    // HARDWARE FIX: Start with relay ON (inverted logic - this gives Guitar/Mic input)
+    // Start with relay ON (this gives Guitar/Mic input)
     channel_switch_relay.Write(true);
 
     // Initialize bypass relay
     bypass_relay.Init(BYPASS_RELAY, GPIO::Mode::OUTPUT);
     
-    // Start with bypass OFF (only loop output, no wet signal from input)
+    // Start with bypass ON
     bypass_relay.Write(false);
 
     // ADC pins: 3 common controls + 5 individual volume controls = 8 total
@@ -162,9 +162,12 @@ void UpdateChannelLEDs()
         channel_to_show = layers[selected_layer].recorded_channel;
 
     uint8_t segs = 0x00;
-    if(channel_to_show == 0) segs = LED_CHANNEL_GUITAR.segment;
-    else if(channel_to_show == 1) segs = LED_CHANNEL_MIC.segment;
-    else if(channel_to_show == 2) segs = LED_CHANNEL_LINE.segment;
+    if(channel_to_show == 0) segs = LED_CHANNEL_MIC.segment;    // Channel 0 = Mic
+    else if(channel_to_show == 1) segs = LED_CHANNEL_GUITAR.segment; // Channel 1 = Guitar
+    else if(channel_to_show == 2) segs = LED_CHANNEL_LINE.segment;   // Channel 2 = Line
+
+    // Add bypass LED if bypass is active
+    if(bypass_active) segs |= LED_BYPASS.segment; // SegC Dig2
 
     LedDriver.Send(LED_CHANNEL_GUITAR.digit, segs); // All are on Dig2
 }
@@ -172,15 +175,15 @@ void UpdateChannelLEDs()
 void UpdateRelays()
 {
     // Control channel switch relay based on selected channel
-    // HARDWARE FIX: PCB relay logic is inverted - Channel 0/1 = Guitar/Mic (relay ON), Channel 2 = Line (relay OFF)
+    // Channel 0/1 = Mic/Guitar (relay ON), Channel 2 = Line (relay OFF)
     
     if(selected_channel == 2) // Line input
     {
-        channel_switch_relay.Write(false);  // Deactivate relay for line input (inverted logic)
+        channel_switch_relay.Write(false);  // Deactivate relay for line input
     }
-    else // Guitar or Mic input
+    else // Mic or Guitar input
     {
-        channel_switch_relay.Write(true);   // Activate relay for guitar/mic input (inverted logic)
+        channel_switch_relay.Write(true);   // Activate relay for mic/guitar input
     }
 }
 
@@ -321,7 +324,14 @@ void AudioCallback(AudioHandle::InputBuffer in,
 
     if(!last_channel_btn && channel_btn_pressed)
     {
-        selected_channel = (selected_channel + 1) % 3;
+        // Custom cycling order: Guitar(1) → Mic(0) → Line(2) → Guitar(1)
+        if(selected_channel == 0)      // Guitar → Mic
+            selected_channel = 1;
+        else if(selected_channel == 1) // Mic → Line  
+            selected_channel = 2;
+        else                          // Line → Guitar
+            selected_channel = 0;
+            
         channel_override_active = true; // User has manually changed channel
         UpdateRelays(); // Update relay state when channel button is pressed
     }
@@ -336,7 +346,7 @@ void AudioCallback(AudioHandle::InputBuffer in,
     if(!last_bypass_btn && bypass_btn_pressed)
     {
         bypass_active = !bypass_active; // Toggle bypass state
-        bypass_relay.Write(bypass_active); // Update relay (OFF = only loop, ON = loop + wet signal)
+        bypass_relay.Write(!bypass_active); 
     }
     last_bypass_btn = bypass_btn_pressed;
 
@@ -346,6 +356,11 @@ void AudioCallback(AudioHandle::InputBuffer in,
 int main(void)
 {
     SetupHardware();
+    
+    // Initialize hardware state to match default channel (Guitar)
+    UpdateRelays();      // Set relay to correct position for Guitar
+    UpdateChannelLEDs(); // Set LED to show Guitar
+    
     hw.StartAudio(AudioCallback);
     while(1) {}
 }

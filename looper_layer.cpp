@@ -85,11 +85,11 @@ void LooperLayer::Process(int adc_offset,
 
     // --- Read pots for this layer ---
     // ADC layout: [0]=SPEED_POT, [1]=PAN_POT, [2]=MASTER_VOL, [3]=VOLUME1_POT, [4]=VOLUME2_POT, [5]=VOLUME3_POT, [6]=VOLUME4_POT, [7]=VOLUME5_POT
-    // HARDWARE FIX: Potentiometers are wired backwards (3V3 and GND swapped), so invert readings
-    float speed_pot = 1.0f - hw->adc.GetFloat(0);              // Common speed control (inverted)
-    float pan_pot   = 1.0f - hw->adc.GetFloat(1);              // Common pan control (inverted)
-    float master_vol = 1.0f - hw->adc.GetFloat(2);             // Master volume for all layers (inverted)
-    float vol_pot   = 1.0f - hw->adc.GetFloat(3 + adc_offset); // Individual volume per layer (inverted)
+    // Potentiometers are wired backwards (3V3 and GND swapped), so readings are inverted
+    float speed_pot = 1.0f - hw->adc.GetFloat(0);              // Common speed control
+    float pan_pot   = 1.0f - hw->adc.GetFloat(1);              // Common pan control
+    float master_vol = 1.0f - hw->adc.GetFloat(2);             // Master volume for all layers
+    float vol_pot   = 1.0f - hw->adc.GetFloat(3 + adc_offset); // Individual volume per layer
 
     // Speed logic - only allow speed changes when explicitly enabled (hold layer button + turn speed knob)
     if(!recording && recorded && allow_speed_control)
@@ -132,7 +132,7 @@ void LooperLayer::Process(int adc_offset,
     if(master_volume < 0.0f) master_volume = 0.0f;
 
     // --- Input selection based on selected channel ---
-    // Channel 0 = Guitar (Right input), Channel 1 = Mic (Left input), Channel 2 = Line (Both inputs)
+    // Channel 0 = Mic (Left input), Channel 1 = Guitar (Right input), Channel 2 = Line (Both inputs)
 
     for(size_t i = 0; i < size; i++)
     {
@@ -143,15 +143,15 @@ void LooperLayer::Process(int adc_offset,
         {
             if(write_idx < buffer_size)
             {
-                if(selected_channel == 0) // Guitar - record from right input
-                {
-                    buffer_l[write_idx] = guitar_in;
-                    buffer_r[write_idx] = guitar_in;
-                }
-                else if(selected_channel == 1) // Mic - record from left input
+                if(selected_channel == 0) // Mic - record from left input
                 {
                     buffer_l[write_idx] = mic_in;
                     buffer_r[write_idx] = mic_in;
+                }
+                else if(selected_channel == 1) // Guitar - record from right input
+                {
+                    buffer_l[write_idx] = guitar_in;
+                    buffer_r[write_idx] = guitar_in;
                 }
                 else if(selected_channel == 2) // Line - record from both inputs (true stereo)
                 {
@@ -162,15 +162,15 @@ void LooperLayer::Process(int adc_offset,
             }
             
             // Pass through during recording
-            if(selected_channel == 0) // Guitar
-            {
-                out[0][i] += guitar_in * volume * master_volume;
-                out[1][i] += guitar_in * volume * master_volume;
-            }
-            else if(selected_channel == 1) // Mic
+            if(selected_channel == 0) // Mic
             {
                 out[0][i] += mic_in * volume * master_volume;
                 out[1][i] += mic_in * volume * master_volume;
+            }
+            else if(selected_channel == 1) // Guitar
+            {
+                out[0][i] += guitar_in * volume * master_volume;
+                out[1][i] += guitar_in * volume * master_volume;
             }
             else if(selected_channel == 2) // Line
             {
@@ -209,9 +209,9 @@ void LooperLayer::ProcessPlaybackOnly(AudioHandle::InputBuffer in,
     {
         // Read individual volume for this layer + master volume
         // ADC layout: [0]=SPEED_POT, [1]=PAN_POT, [2]=MASTER_VOL, [3]=VOLUME1_POT, [4]=VOLUME2_POT, [5]=VOLUME3_POT, [6]=VOLUME4_POT, [7]=VOLUME5_POT
-        // HARDWARE FIX: Potentiometers are wired backwards (3V3 and GND swapped), so invert readings
-        float master_vol = 1.0f - hw->adc.GetFloat(2);             // Master volume for all layers (inverted)
-        float vol_pot = 1.0f - hw->adc.GetFloat(3 + layer_index);  // Individual volume per layer (inverted)
+        // Potentiometers are wired backwards (3V3 and GND swapped), so readings are inverted
+        float master_vol = 1.0f - hw->adc.GetFloat(2);             // Master volume for all layers
+        float vol_pot = 1.0f - hw->adc.GetFloat(3 + layer_index);  // Individual volume per layer
         
         float master_volume = powf(master_vol, 2.5f) * 1.43f;  // Master: 0.0 to 1.43x
         if(master_volume < 0.0f) master_volume = 0.0f;
