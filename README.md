@@ -40,7 +40,7 @@ Built on the Electrosmith Daisy Seed platform, it offers real-time looping with 
 **Back Side:**
 ![PCB Back](Hardware/Photos/EasyEDA_Back.png)
 
-![PCB Back](Hardware/Photos/Ready%202.png)
+![PCB Back](Hardware/Photos/Ready%202.jpeg)
 
 
 ## Hardware
