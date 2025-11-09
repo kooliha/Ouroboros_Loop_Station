@@ -59,6 +59,33 @@ Links
 * **3D-printable enclosure**: [3D Files](Hardware/3d%20Printing%20Box%201.1/)
 * **Front Panel**: [Design Files](Hardware/Front%20Panel%201.1-1.2/)
 
+## Firmware
+
+Ready-to-flash firmware is available in the `Firmware Master/` folder.
+
+### Flashing Instructions
+
+**Option 1: USB Mass Storage (Easiest)**
+1. Download the `.bin` file from [Firmware Master](Firmware%20Master/)
+2. Put Daisy Seed in USB Mass Storage mode:
+   - Hold **BOOT** button
+   - While holding BOOT, press and release **RESET** 
+   - Release **BOOT** button
+3. Daisy appears as USB drive on your computer
+4. Drag and drop the `.bin` file to the USB drive
+5. Firmware flashes automatically and Daisy restarts
+
+**Option 2: DFU Flashing**
+```bash
+make program-dfu
+```
+
+**Building from Source**
+```bash
+make
+# Creates main.bin in build/ folder
+```
+
 ---
 
 Release notes v1.1 (important)
