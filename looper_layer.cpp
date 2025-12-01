@@ -161,7 +161,8 @@ void LooperLayer::Process(int adc_offset,
                 write_idx++;
             }
             
-            // Pass through during recording
+            // Pass through during recording (DISABLED - no monitoring during recording)
+            /*
             if(selected_channel == 0) // Mic
             {
                 out[0][i] += mic_in * volume * master_volume;
@@ -177,6 +178,7 @@ void LooperLayer::Process(int adc_offset,
                 out[0][i] += mic_in * volume * master_volume;
                 out[1][i] += guitar_in * volume * master_volume;
             }
+            */
         }
         else if(recorded && record_len > 0 && !paused)
         {
