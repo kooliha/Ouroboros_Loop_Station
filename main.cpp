@@ -2,10 +2,15 @@
 #include "daisysp.h"
 #include "max7219.h"
 #include "looper_layer.h"
+#include <cmath>
 
 using namespace daisy;
 using namespace daisy::seed;
 using namespace daisysp;
+
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 
 #define kBuffSize 1600000 // ~33 seconds at 48kHz per each layer (5 in total)
 #define kNumLayers 5
@@ -82,6 +87,16 @@ bool channel_override_active = false; // True when user has manually changed cha
 
 // Bypass state
 bool bypass_active = true; // True = loop + wet signal, False = only loop
+
+// Metronome state
+bool metronome_active = false;  // Metronome on/off
+float metronome_bpm = 120.0f;   // Current BPM (40-250 range)
+uint32_t metronome_sample_counter = 0;  // Sample counter for metronome timing
+uint32_t samples_per_beat = 0;  // Calculated from BPM
+int metronome_beat = 0;  // Current beat in 4/4 time (0=beat 1, 1=beat 2, etc.)
+const int CLICK_DURATION_MS = 5;  // Click duration in milliseconds
+uint32_t click_samples_remaining = 0;  // Countdown for click duration
+bool is_downbeat = false;  // True for beat 1 (accent)
 
 void SetupHardware()
 {
@@ -168,6 +183,21 @@ void UpdateChannelLEDs()
 
     // Add bypass LED if bypass is active
     if(bypass_active) segs |= LED_BYPASS.segment; // SegC Dig2
+    
+    // Blink bypass LED when metronome is active (override solid bypass LED)
+    if(metronome_active)
+    {
+        // Blink at metronome tempo (on during beat, off between beats)
+        uint32_t blink_threshold = samples_per_beat / 4;  // LED on for 1/4 of beat duration
+        if(metronome_sample_counter < blink_threshold)
+        {
+            segs |= LED_BYPASS.segment;  // Force LED on during beat
+        }
+        else
+        {
+            segs &= ~LED_BYPASS.segment;  // Force LED off between beats
+        }
+    }
 
     LedDriver.Send(LED_CHANNEL_GUITAR.digit, segs); // All are on Dig2
 }
@@ -225,6 +255,76 @@ void AudioCallback(AudioHandle::InputBuffer in,
     {
         out[0][i] = 0.0f;
         out[1][i] = 0.0f;
+    }
+
+    // === METRONOME PROCESSING ===
+    if(metronome_active)
+    {
+        // Read speed knob only if no layer button is held (layer speed control has priority)
+        bool any_layer_button_held = false;
+        Switch* buttons[5] = {&layer1_select_button, &layer2_select_button, &layer3_select_button, &layer4_select_button, &layer5_select_button};
+        for(int i = 0; i < kNumLayers; i++)
+        {
+            if(buttons[i]->Pressed() && buttons[i]->TimeHeldMs() > 200)
+            {
+                any_layer_button_held = true;
+                break;
+            }
+        }
+        
+        if(!any_layer_button_held)
+        {
+            // Speed knob controls metronome BPM: 40-250 BPM range
+            float speed_pot = 1.0f - hw.adc.GetFloat(0);  // Inverted (pots wired backwards)
+            metronome_bpm = 40.0f + (speed_pot * 210.0f);  // 40 + (0-1 * 210) = 40-250
+        }
+        
+        // Calculate samples per beat based on BPM
+        float sample_rate = hw.AudioSampleRate();
+        samples_per_beat = (uint32_t)((60.0f / metronome_bpm) * sample_rate);
+        
+        // Read master volume for metronome output level
+        float master_vol = 1.0f - hw.adc.GetFloat(2);  // Inverted
+        float master_volume = powf(master_vol, 2.5f) * 1.43f;
+        
+        // Process each sample
+        for(size_t i = 0; i < size; i++)
+        {
+            // Check if we need to trigger a new beat
+            if(metronome_sample_counter >= samples_per_beat)
+            {
+                metronome_sample_counter = 0;
+                metronome_beat = (metronome_beat + 1) % 4;  // 4/4 time
+                is_downbeat = (metronome_beat == 0);
+                
+                // Start click
+                click_samples_remaining = (uint32_t)((CLICK_DURATION_MS / 1000.0f) * sample_rate);
+            }
+            
+            // Generate click sound if active
+            if(click_samples_remaining > 0)
+            {
+                // Simple click: short sine burst at 1000 Hz
+                float click_freq = 1000.0f;
+                float phase = (float)(click_samples_remaining) / sample_rate * click_freq * 2.0f * M_PI;
+                
+                // Amplitude: downbeat louder (0.3) than other beats (0.15)
+                float amplitude = is_downbeat ? 0.3f : 0.15f;
+                
+                // Envelope: quick decay
+                float envelope = (float)click_samples_remaining / (click_samples_remaining + 1);
+                
+                float click_sample = sinf(phase) * amplitude * envelope * master_volume;
+                
+                // Add to output (not recorded, just monitoring)
+                out[0][i] += click_sample;
+                out[1][i] += click_sample;
+                
+                click_samples_remaining--;
+            }
+            
+            metronome_sample_counter++;
+        }
     }
 
     // Layer select buttons debounce and switching
@@ -337,17 +437,42 @@ void AudioCallback(AudioHandle::InputBuffer in,
     }
     last_channel_btn = channel_btn_pressed;
 
-    // Bypass toggle switch
+    // Bypass button: short press = bypass toggle, long press = metronome toggle
     bypass_button.Debounce();
     
     static bool last_bypass_btn = false;
+    static bool metronome_toggled = false;
     bool bypass_btn_pressed = bypass_button.Pressed();
     
-    if(!last_bypass_btn && bypass_btn_pressed)
+    // Toggle metronome on long press (>400ms)
+    if(bypass_button.TimeHeldMs() > 400 && bypass_btn_pressed && last_bypass_btn)
     {
-        bypass_active = !bypass_active; // Toggle bypass state
-        bypass_relay.Write(!bypass_active); 
+        if(!metronome_toggled)
+        {
+            metronome_active = !metronome_active;
+            metronome_toggled = true;
+            
+            // Reset metronome state when activating
+            if(metronome_active)
+            {
+                metronome_sample_counter = 0;
+                metronome_beat = 0;
+                click_samples_remaining = 0;
+            }
+        }
     }
+    else
+    {
+        metronome_toggled = false;
+    }
+    
+    // Toggle bypass on short press (button release before 400ms)
+    if(last_bypass_btn && !bypass_btn_pressed && bypass_button.TimeHeldMs() < 400)
+    {
+        bypass_active = !bypass_active;
+        bypass_relay.Write(!bypass_active);
+    }
+    
     last_bypass_btn = bypass_btn_pressed;
 
     UpdateChannelLEDs();
